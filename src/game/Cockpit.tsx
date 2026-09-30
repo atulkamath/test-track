@@ -3,27 +3,40 @@
 // Car interior for the cockpit view: dash with live digital gauges, a steering wheel that turns with your
 // input, gloved hands, and an H-pattern lever your right hand reaches for on every gear change.
 // Coordinates are in the car's local frame (metres): +z forward, +x left, y up. Driver sits on the left.
+// Everything below the eye line is kept low so the road is visible from ~5 m ahead.
 import { forwardRef, useImperativeHandle, useMemo, useRef } from "react";
 import * as THREE from "three";
 
-export const EYE = new THREE.Vector3(0.38, 1.22, -0.22);
-const WHEEL_POS = new THREE.Vector3(0.38, 0.98, 0.18);
-const LEVER_PIVOT = new THREE.Vector3(-0.02, 0.74, 0.02);
-const SHOULDER_L = new THREE.Vector3(0.6, 1.02, -0.32);
-const SHOULDER_R = new THREE.Vector3(0.16, 1.02, -0.32);
+export const EYE = new THREE.Vector3(0.38, 1.27, -0.2);
+const WHEEL_POS = new THREE.Vector3(0.38, 0.9, 0.22);
+const WHEEL_TILT = 0.5;
+const RIM = 0.165;
+const LEVER_PIVOT = new THREE.Vector3(-0.02, 0.7, 0.05);
+const SHOULDER_L = new THREE.Vector3(0.6, 1.06, -0.3);
+const SHOULDER_R = new THREE.Vector3(0.16, 1.06, -0.3);
 /** How long the hand spends reaching for the lever and back (seconds). */
 const SHIFT_TIME = 0.45;
+const PAINT = "#d23a2c";
+const SUIT = "#b3261e";
+const GLOVE = "#23272e";
 
 export interface CockpitHandle {
   update(frame: { steer: number; gear: number; speedKmh: number; rpm: number; delta: number }): void;
 }
 
-/** Stretch a unit-height cylinder between two points (for forearms and pillars). */
+const UP = new THREE.Vector3(0, 1, 0);
+
+/** Stretch a unit-length, y-aligned mesh between two points. */
 function span(obj: THREE.Object3D, a: THREE.Vector3, b: THREE.Vector3) {
   obj.position.copy(a).add(b).multiplyScalar(0.5);
   const dir = new THREE.Vector3().subVectors(b, a);
   obj.scale.set(1, dir.length(), 1);
-  obj.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
+  obj.quaternion.setFromUnitVectors(UP, dir.normalize());
+}
+
+/** Elbow sits below and outboard of the shoulder-hand midpoint. */
+function elbow(shoulder: THREE.Vector3, hand: THREE.Vector3, out: number, target: THREE.Vector3) {
+  return target.lerpVectors(shoulder, hand, 0.5).add(new THREE.Vector3(out * 0.07, -0.13, -0.02));
 }
 
 function dashTexture() {
@@ -35,7 +48,7 @@ function dashTexture() {
   return { canvas: c, texture: t };
 }
 
-function drawDash(canvas: HTMLCanvasElement, gear: number, speedKmh: number, rpm: number) {
+function drawDash(canvas: HTMLCanvasElement, texture: THREE.Texture, gear: number, speedKmh: number, rpm: number) {
   const ctx = canvas.getContext("2d")!;
   ctx.fillStyle = "#07090d";
   ctx.fillRect(0, 0, 256, 112);
@@ -63,6 +76,7 @@ function drawDash(canvas: HTMLCanvasElement, gear: number, speedKmh: number, rpm
   ctx.font = "12px monospace";
   ctx.fillStyle = "#9fb4c8";
   ctx.fillText("RPM", 246, 88);
+  texture.needsUpdate = true;
 }
 
 /** H-pattern: 1/3/5 forward, 2/4/6 back; left/centre/right gates. */
@@ -73,23 +87,66 @@ function leverAngles(gear: number): [number, number] {
   return [fwd, gate];
 }
 
+/** A gloved fist gripping a bar that runs along local y: curled fingers wrap it, thumb on top, cuff behind. */
+function Fist() {
+  return (
+    <group>
+      {/* Curled fingers wrapping around the grip */}
+      <mesh rotation={[Math.PI / 2, 0, Math.PI * 0.15]}>
+        <torusGeometry args={[0.032, 0.019, 8, 14, Math.PI * 1.45]} />
+        <meshStandardMaterial color={GLOVE} roughness={0.55} />
+      </mesh>
+      {/* Back of the hand / palm */}
+      <mesh position={[0, 0, -0.04]} rotation={[Math.PI / 2, 0, 0]} scale={[1.15, 1, 0.8]}>
+        <capsuleGeometry args={[0.03, 0.05, 6, 12]} />
+        <meshStandardMaterial color={GLOVE} roughness={0.55} />
+      </mesh>
+      {/* Thumb resting over the top */}
+      <mesh position={[0, 0.03, -0.012]} rotation={[0.9, 0, 0]}>
+        <capsuleGeometry args={[0.012, 0.035, 4, 8]} />
+        <meshStandardMaterial color={GLOVE} roughness={0.55} />
+      </mesh>
+      {/* Cuff */}
+      <mesh position={[0, 0, -0.09]} rotation={[Math.PI / 2, 0, 0]}>
+        <cylinderGeometry args={[0.036, 0.034, 0.05, 14]} />
+        <meshStandardMaterial color="#c8322b" roughness={0.6} />
+      </mesh>
+    </group>
+  );
+}
+
+function Limb({ limbRef, radius }: { limbRef: React.RefObject<THREE.Mesh | null>; radius: number }) {
+  return (
+    <mesh ref={limbRef}>
+      <capsuleGeometry args={[radius, 1, 6, 12]} />
+      <meshStandardMaterial color={SUIT} roughness={0.75} />
+    </mesh>
+  );
+}
+
 export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
   const wheelSpin = useRef<THREE.Group>(null);
   const lever = useRef<THREE.Group>(null);
   const handR = useRef<THREE.Group>(null);
-  const armL = useRef<THREE.Mesh>(null);
-  const armR = useRef<THREE.Mesh>(null);
+  const upperL = useRef<THREE.Mesh>(null);
+  const lowerL = useRef<THREE.Mesh>(null);
+  const upperR = useRef<THREE.Mesh>(null);
+  const lowerR = useRef<THREE.Mesh>(null);
   const anchorL = useRef<THREE.Object3D>(null);
   const anchorR = useRef<THREE.Object3D>(null);
   const root = useRef<THREE.Group>(null);
-  const dash = useMemo(dashTexture, []);
+  const dash = useMemo(() => dashTexture(), []);
   const state = useRef({ gear: 1, steer: 0, shiftT: 1, lastDash: "", leverFrom: [0, 0] as [number, number] });
-  const tmp = useMemo(() => ({ a: new THREE.Vector3(), b: new THREE.Vector3(), knob: new THREE.Vector3() }), []);
+  const tmp = useMemo(
+    () => ({ a: new THREE.Vector3(), b: new THREE.Vector3(), knob: new THREE.Vector3(), el: new THREE.Vector3(), q: new THREE.Quaternion() }),
+    [],
+  );
 
   useImperativeHandle(ref, () => ({
     update({ steer, gear, speedKmh, rpm, delta }) {
       const s = state.current;
-      if (!root.current || !wheelSpin.current || !lever.current || !handR.current) return;
+      const r = root.current;
+      if (!r || !wheelSpin.current || !lever.current || !handR.current || !anchorL.current || !anchorR.current) return;
       s.steer += (steer - s.steer) * (1 - Math.exp(-delta * 10));
       wheelSpin.current.rotation.z = -s.steer * 1.6; // left input turns the top of the wheel left (+x)
 
@@ -105,39 +162,43 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
       const to = leverAngles(gear);
       lever.current.rotation.set(s.leverFrom[0] + (to[0] - s.leverFrom[0]) * move, 0, s.leverFrom[1] + (to[1] - s.leverFrom[1]) * move);
 
-      // Right hand: blend from its spot on the wheel rim to the lever knob.
-      root.current.updateMatrixWorld();
-      anchorR.current!.getWorldPosition(tmp.a);
-      root.current.worldToLocal(tmp.a);
-      lever.current.localToWorld(tmp.knob.set(0, 0.24, 0));
-      root.current.worldToLocal(tmp.knob);
+      // Right hand: blend from its grip on the rim to the lever knob, keeping the rim's orientation while on it.
+      r.updateMatrixWorld();
+      anchorR.current.getWorldPosition(tmp.a);
+      r.worldToLocal(tmp.a);
+      lever.current.localToWorld(tmp.knob.set(0, 0.2, 0));
+      r.worldToLocal(tmp.knob);
       const e = THREE.MathUtils.smootherstep(reach, 0, 1);
       handR.current.position.lerpVectors(tmp.a, tmp.knob, e);
-      handR.current.rotation.set(0, 0, -s.steer * 1.6 * (1 - e));
+      anchorR.current.getWorldQuaternion(tmp.q);
+      handR.current.quaternion.copy(r.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(tmp.q));
+      handR.current.quaternion.slerp(new THREE.Quaternion(), e);
 
-      // Forearms from shoulders to hands.
-      anchorL.current!.getWorldPosition(tmp.b);
-      root.current.worldToLocal(tmp.b);
-      span(armL.current!, SHOULDER_L, tmp.b);
-      span(armR.current!, SHOULDER_R, handR.current.position);
+      // Arms: shoulder -> elbow -> hand.
+      anchorL.current.getWorldPosition(tmp.b);
+      r.worldToLocal(tmp.b);
+      elbow(SHOULDER_L, tmp.b, 1, tmp.el);
+      span(upperL.current!, SHOULDER_L, tmp.el);
+      span(lowerL.current!, tmp.el, tmp.b);
+      elbow(SHOULDER_R, handR.current.position, -1, tmp.el);
+      span(upperR.current!, SHOULDER_R, tmp.el);
+      span(lowerR.current!, tmp.el, handR.current.position);
 
       const key = `${gear}|${Math.round(speedKmh)}|${Math.round(rpm / 300)}`;
       if (key !== s.lastDash) {
-        drawDash(dash.canvas, gear, speedKmh, rpm);
-        dash.texture.needsUpdate = true;
+        drawDash(dash.canvas, dash.texture, gear, speedKmh, rpm);
         s.lastDash = key;
       }
     },
   }));
 
   const trim = <meshStandardMaterial color="#1b1d21" roughness={0.8} />;
-  const glove = <meshStandardMaterial color="#20242b" roughness={0.6} />;
   const pillar = (a: [number, number, number], b: [number, number, number]) => {
     const m = new THREE.Object3D();
     span(m, new THREE.Vector3(...a), new THREE.Vector3(...b));
     return (
       <mesh position={m.position} quaternion={m.quaternion} scale={[1, m.scale.y, 1]}>
-        <cylinderGeometry args={[0.045, 0.06, 1, 8]} />
+        <cylinderGeometry args={[0.04, 0.055, 1, 8]} />
         {trim}
       </mesh>
     );
@@ -145,21 +206,26 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
 
   return (
     <group ref={root}>
-      {/* Dashboard, gauge cowl and the live display */}
-      <mesh position={[0, 0.9, 0.52]}>
-        <boxGeometry args={[1.7, 0.24, 0.5]} />
+      {/* The car's own bonnet, seen over the dash */}
+      <mesh position={[0, 0.9, 1.35]} rotation={[-0.08, 0, 0]}>
+        <boxGeometry args={[1.75, 0.06, 1.25]} />
+        <meshPhysicalMaterial color={PAINT} metalness={0.25} roughness={0.3} clearcoat={1} clearcoatRoughness={0.06} />
+      </mesh>
+      {/* Dashboard (top at ~0.94), small gauge cowl and the live display */}
+      <mesh position={[0, 0.84, 0.64]}>
+        <boxGeometry args={[1.7, 0.2, 0.55]} />
         <meshStandardMaterial color="#15171b" roughness={0.9} />
       </mesh>
-      <mesh position={[0.38, 1.055, 0.4]}>
-        <boxGeometry args={[0.5, 0.07, 0.28]} />
+      <mesh position={[0.38, 0.975, 0.5]}>
+        <boxGeometry args={[0.42, 0.04, 0.2]} />
         {trim}
       </mesh>
-      <mesh position={[0.38, 0.985, 0.262]} rotation={[0.3, Math.PI, 0]}>
-        <planeGeometry args={[0.34, 0.15]} />
+      <mesh position={[0.38, 0.925, 0.4]} rotation={[0.45, Math.PI, 0]}>
+        <planeGeometry args={[0.3, 0.13]} />
         <meshBasicMaterial map={dash.texture} toneMapped={false} />
       </mesh>
       {/* Centre console, doors, header, roof lining, A-pillars, mirror */}
-      <mesh position={[-0.02, 0.58, 0.05]}>
+      <mesh position={[-0.02, 0.54, 0.05]}>
         <boxGeometry args={[0.26, 0.32, 0.8]} />
         {trim}
       </mesh>
@@ -175,33 +241,37 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
           </mesh>
         </group>
       ))}
-      <mesh position={[0, 1.56, 0.08]}>
-        <boxGeometry args={[1.5, 0.1, 0.1]} />
+      <mesh position={[0, 1.62, 0.12]}>
+        <boxGeometry args={[1.5, 0.07, 0.08]} />
         {trim}
       </mesh>
-      <mesh position={[0, 1.62, -0.45]}>
+      <mesh position={[0, 1.68, -0.4]}>
         <boxGeometry args={[1.5, 0.04, 1.0]} />
         <meshStandardMaterial color="#2b2e33" roughness={0.95} />
       </mesh>
-      {pillar([0.8, 0.98, 0.62], [0.66, 1.58, 0.06])}
-      {pillar([-0.8, 0.98, 0.62], [-0.66, 1.58, 0.06])}
-      <mesh position={[0.02, 1.47, 0.1]}>
-        <boxGeometry args={[0.26, 0.07, 0.03]} />
+      {pillar([0.8, 0.96, 0.7], [0.64, 1.64, 0.1])}
+      {pillar([-0.8, 0.96, 0.7], [-0.64, 1.64, 0.1])}
+      <mesh position={[0.02, 1.55, 0.14]}>
+        <boxGeometry args={[0.24, 0.06, 0.03]} />
         <meshStandardMaterial color="#9aa6b2" metalness={0.9} roughness={0.1} />
       </mesh>
 
-      {/* Steering wheel (tilted toward the driver) with the left hand fixed on the rim */}
-      <group position={WHEEL_POS} rotation={[0.35, 0, 0]}>
-        <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, 0.12]}>
-          <cylinderGeometry args={[0.03, 0.04, 0.25, 10]} />
+      {/* Steering wheel, tilted toward the driver; the left hand is fixed on the rim at 9 o'clock */}
+      <group position={WHEEL_POS} rotation={[WHEEL_TILT, 0, 0]}>
+        <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, 0.13]}>
+          <cylinderGeometry args={[0.03, 0.04, 0.26, 12]} />
           {trim}
         </mesh>
         <group ref={wheelSpin}>
           <mesh>
-            <torusGeometry args={[0.17, 0.022, 10, 36]} />
-            <meshStandardMaterial color="#111316" roughness={0.5} />
+            <torusGeometry args={[RIM, 0.024, 12, 48]} />
+            <meshStandardMaterial color="#141619" roughness={0.45} />
           </mesh>
-          {/* Three spokes: left, right, bottom */}
+          {/* Yellow top-centre marker */}
+          <mesh position={[0, RIM, 0]}>
+            <boxGeometry args={[0.018, 0.02, 0.052]} />
+            <meshStandardMaterial color="#f2c230" />
+          </mesh>
           {(
             [
               [0.085, 0, 0.17, 0.03],
@@ -214,48 +284,39 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
               <meshStandardMaterial color="#2a2d33" metalness={0.5} roughness={0.4} />
             </mesh>
           ))}
-          <mesh>
-            <cylinderGeometry args={[0.045, 0.045, 0.03, 16]} />
+          <mesh rotation={[Math.PI / 2, 0, 0]}>
+            <cylinderGeometry args={[0.045, 0.045, 0.03, 20]} />
             <meshStandardMaterial color="#c8322b" roughness={0.4} />
           </mesh>
-          {/* 9 o'clock (+x, driver's left) and 3 o'clock anchors */}
-          <object3D ref={anchorL} position={[0.17, 0, 0]} />
-          <object3D ref={anchorR} position={[-0.17, 0, 0]} />
-          <mesh position={[0.17, 0, -0.01]}>
-            <boxGeometry args={[0.06, 0.1, 0.07]} />
-            {glove}
-          </mesh>
+          <object3D ref={anchorL} position={[RIM, 0, 0]} />
+          <object3D ref={anchorR} position={[-RIM, 0, 0]} />
+          <group position={[RIM, 0, 0]}>
+            <Fist />
+          </group>
         </group>
       </group>
 
-      {/* Right hand (moves between wheel and lever) and forearms */}
+      {/* Right hand (travels between wheel and lever) and both arms */}
       <group ref={handR}>
-        <mesh>
-          <boxGeometry args={[0.06, 0.1, 0.07]} />
-          {glove}
-        </mesh>
+        <Fist />
       </group>
-      <mesh ref={armL}>
-        <cylinderGeometry args={[0.035, 0.045, 1, 8]} />
-        <meshStandardMaterial color="#c8322b" roughness={0.7} />
-      </mesh>
-      <mesh ref={armR}>
-        <cylinderGeometry args={[0.035, 0.045, 1, 8]} />
-        <meshStandardMaterial color="#c8322b" roughness={0.7} />
-      </mesh>
+      <Limb limbRef={upperL} radius={0.05} />
+      <Limb limbRef={lowerL} radius={0.042} />
+      <Limb limbRef={upperR} radius={0.05} />
+      <Limb limbRef={lowerR} radius={0.042} />
 
       {/* Gear lever */}
       <group ref={lever} position={LEVER_PIVOT}>
-        <mesh position={[0, 0.11, 0]}>
-          <cylinderGeometry args={[0.012, 0.016, 0.22, 8]} />
+        <mesh position={[0, 0.1, 0]}>
+          <cylinderGeometry args={[0.012, 0.016, 0.2, 8]} />
           <meshStandardMaterial color="#b9c0c7" metalness={0.8} roughness={0.25} />
         </mesh>
-        <mesh position={[0, 0.24, 0]}>
-          <sphereGeometry args={[0.035, 16, 12]} />
+        <mesh position={[0, 0.215, 0]}>
+          <sphereGeometry args={[0.032, 16, 12]} />
           <meshStandardMaterial color="#111316" roughness={0.3} />
         </mesh>
       </group>
-      <mesh position={[-0.02, 0.745, 0.02]}>
+      <mesh position={[-0.02, 0.705, 0.05]}>
         <boxGeometry args={[0.12, 0.02, 0.14]} />
         <meshStandardMaterial color="#0b0c0e" roughness={0.9} />
       </mesh>

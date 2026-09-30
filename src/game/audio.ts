@@ -34,6 +34,7 @@ export class Sound {
   private shiftGain!: GainNode;
   private brakeGain!: GainNode;
   private brakeOsc!: OscillatorNode;
+  private brakeOsc2!: OscillatorNode;
   private noise!: AudioBufferSourceNode;
   muted = false;
 
@@ -89,28 +90,43 @@ export class Sound {
     noise.start();
     this.noise = noise;
 
-    // Brake screech: a warbling high tone over narrow-band noise.
+    // Brake screech: two detuned squares warbling around 2 kHz, band-passed, over a bed of hiss.
     this.brakeGain = ctx.createGain();
     this.brakeGain.gain.value = 0;
     this.brakeGain.connect(this.master);
-    this.brakeOsc = ctx.createOscillator();
-    this.brakeOsc.type = "triangle";
-    this.brakeOsc.frequency.value = 2900;
+    const screechBand = ctx.createBiquadFilter();
+    screechBand.type = "bandpass";
+    screechBand.frequency.value = 2200;
+    screechBand.Q.value = 2.5;
+    screechBand.connect(this.brakeGain);
     const vibrato = ctx.createOscillator();
-    vibrato.frequency.value = 23;
+    vibrato.frequency.value = 17;
     const vibratoDepth = ctx.createGain();
-    vibratoDepth.gain.value = 120;
-    vibrato.connect(vibratoDepth).connect(this.brakeOsc.frequency);
+    vibratoDepth.gain.value = 90;
+    vibrato.connect(vibratoDepth);
     vibrato.start();
-    const toneLevel = ctx.createGain();
-    toneLevel.gain.value = 0.35;
-    this.brakeOsc.connect(toneLevel).connect(this.brakeGain);
-    this.brakeOsc.start();
-    const brakeNoise = ctx.createBiquadFilter();
-    brakeNoise.type = "bandpass";
-    brakeNoise.frequency.value = 3200;
-    brakeNoise.Q.value = 12;
-    noise.connect(brakeNoise).connect(this.brakeGain);
+    this.brakeOsc = ctx.createOscillator();
+    const second = ctx.createOscillator();
+    for (const [o, f] of [
+      [this.brakeOsc, 1900],
+      [second, 2430],
+    ] as const) {
+      o.type = "square";
+      o.frequency.value = f;
+      vibratoDepth.connect(o.frequency);
+      const lvl = ctx.createGain();
+      lvl.gain.value = 0.5;
+      o.connect(lvl).connect(screechBand);
+      o.start();
+    }
+    this.brakeOsc2 = second;
+    const hiss = ctx.createBiquadFilter();
+    hiss.type = "bandpass";
+    hiss.frequency.value = 2800;
+    hiss.Q.value = 1.5;
+    const hissLvl = ctx.createGain();
+    hissLvl.gain.value = 0.6;
+    noise.connect(hiss).connect(hissLvl).connect(this.brakeGain);
 
     const tyreFilter = ctx.createBiquadFilter();
     tyreFilter.type = "bandpass";
@@ -154,10 +170,11 @@ export class Sound {
     this.tyreGain.gain.setTargetAtTime(slip * 0.18, t, 0.05);
     const s = Math.min(Math.abs(f.speed) / 55, 1);
     this.windGain.gain.setTargetAtTime(s * s * 0.12, t, 0.1);
-    // Screech when the brakes bite at speed; pitch drops as the car slows.
-    const screech = f.braking ? Math.min(Math.max((Math.abs(f.speed) - 12) / 25, 0), 1) : 0;
-    this.brakeGain.gain.setTargetAtTime(screech * 0.09, t, screech > 0 ? 0.04 : 0.08);
-    this.brakeOsc.frequency.setTargetAtTime(2300 + Math.abs(f.speed) * 18, t, 0.1);
+    // Screech whenever the brakes bite above ~18 km/h; louder and higher at speed.
+    const screech = f.braking ? Math.min(Math.max((Math.abs(f.speed) - 5) / 20, 0), 1) : 0;
+    this.brakeGain.gain.setTargetAtTime(screech * 0.32, t, screech > 0 ? 0.02 : 0.12);
+    this.brakeOsc.frequency.setTargetAtTime(1600 + Math.abs(f.speed) * 12, t, 0.08);
+    this.brakeOsc2.frequency.setTargetAtTime(2050 + Math.abs(f.speed) * 15, t, 0.08);
     this.crowdGain.gain.setTargetAtTime(0.015 + f.crowd * 0.2, t, 0.3);
     this.crowdFilter.frequency.setTargetAtTime(500 + f.crowd * 500, t, 0.3);
   }

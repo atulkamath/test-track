@@ -70,6 +70,7 @@ function Driver({
   const crowdNear = useRef({ level: 0, frame: 0 });
   const cockpit = useRef<CockpitHandle>(null);
   const cockpitGroup = useRef<THREE.Group>(null);
+  const exterior = useRef<THREE.Group>(null);
   const lastGear = useRef(0);
 
   useFrame(({ camera }, delta) => {
@@ -94,8 +95,8 @@ function Driver({
     const sim = engine.sim.state.car;
     const viewName = VIEWS[view.current];
     rig.update(camera as THREE.PerspectiveCamera, viewName, p, speed, sim.offRoad, delta, car.current ?? undefined, EYE);
-    // Hide the player's car when the camera is in front of it; show the interior only from the driver's seat.
-    if (car.current) car.current.visible = viewName !== "Bumper";
+    // Exterior hidden when the camera is inside or in front of the car; interior only from the driver's seat.
+    if (exterior.current) exterior.current.visible = viewName !== "Bumper" && viewName !== "Cockpit";
     if (cockpitGroup.current) cockpitGroup.current.visible = viewName === "Cockpit";
 
     // Gears: the cockpit hand reaches for the lever and the engine note cuts on every change.
@@ -140,9 +141,11 @@ function Driver({
         shadow-bias={-0.0005}
       />
       <group ref={car}>
-        <Suspense fallback={null}>
-          <Car model={PLAYER_MODEL} />
-        </Suspense>
+        <group ref={exterior}>
+          <Suspense fallback={null}>
+            <Car model={PLAYER_MODEL} />
+          </Suspense>
+        </group>
         <group ref={cockpitGroup} visible={false}>
           <Cockpit ref={cockpit} />
         </group>
@@ -194,10 +197,11 @@ function World({ track, layout }: { track: Track; layout: Layout }) {
 }
 
 /** Modern grade: ambient occlusion for contact shading, gentle bloom, clean anti-aliasing. */
-function Effects() {
+function Effects({ ao }: { ao: boolean }) {
   return (
     <EffectComposer multisampling={0}>
-      <N8AO aoRadius={2.5} distanceFalloff={1} intensity={2.2} quality="medium" halfRes />
+      {/* AO off in the cockpit: surfaces centimetres from the lens would darken the whole view. */}
+      <N8AO enabled={ao} aoRadius={2.5} distanceFalloff={1} intensity={2.2} quality="medium" halfRes />
       <Bloom mipmapBlur luminanceThreshold={0.9} luminanceSmoothing={0.15} intensity={0.3} />
       <HueSaturation saturation={0.06} />
       <Vignette offset={0.35} darkness={0.35} />
@@ -211,6 +215,7 @@ export default function Game() {
   const layout = useMemo(() => buildLayout(track), [track]);
   const skids = useRef<SkidHandle>(null);
   const view = useRef(0);
+  const [viewIdx, setViewIdx] = useState(0);
   const [viewName, setViewName] = useState<string | null>(null);
   const [muted, setMuted] = useState(false);
   const sound = useRef<Sound | null>(null);
@@ -235,6 +240,7 @@ export default function Game() {
 
   const cycleView = useCallback(() => {
     view.current = (view.current + 1) % VIEWS.length;
+    setViewIdx(view.current);
     setViewName(VIEWS[view.current]);
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setViewName(null), 1400);
@@ -323,7 +329,7 @@ export default function Game() {
         <Crowd people={layout.people} engine={engine} />
         <Helicopter engine={engine} />
         <BigScreen layout={layout} engine={engine} />
-        <Effects />
+        <Effects ao={VIEWS[viewIdx] !== "Cockpit"} />
       </Canvas>
 
       <div className={styles.hud}>
