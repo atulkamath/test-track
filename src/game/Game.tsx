@@ -10,7 +10,9 @@ import { ALL_WHEELS, Car, FRONT_WHEELS, WHEEL_RADIUS } from "./Car";
 import { Engine, formatTicks } from "./engine";
 import { Cones, FinishLine, Ground, Road, Trees } from "./Scene";
 import { Tacho, type TachoHandle } from "./Tacho";
-import { Billboards, Grandstand, Mountains, TyreWalls } from "./Trackside";
+import { CircuitBoxes, FerrisWheel, Flags, GravelTraps, Hills, TimingTower } from "./Circuit";
+import { buildLayout } from "./layout";
+import { Billboards, Mountains, TyreWalls } from "./Trackside";
 import styles from "./game.module.css";
 
 
@@ -72,7 +74,7 @@ function Driver({
     }
     // Keep the shadow camera centred on the car so a small shadow map stays sharp.
     if (sun.current) {
-      sun.current.position.set(p.x + 60, 90, p.z + 40);
+      sun.current.position.set(p.x + SUN_DIR.x * 150, SUN_DIR.y * 150, p.z + SUN_DIR.z * 150);
       sun.current.target.position.set(p.x, 0, p.z);
       sun.current.target.updateMatrixWorld();
     }
@@ -106,7 +108,8 @@ function Driver({
     <>
       <directionalLight
         ref={sun}
-        intensity={1.8}
+        intensity={2.4}
+        color="#ffe2bd"
         castShadow
         shadow-mapSize={[4096, 4096]}
         shadow-camera-left={-80}
@@ -114,7 +117,7 @@ function Driver({
         shadow-camera-top={80}
         shadow-camera-bottom={-80}
         shadow-radius={4}
-        shadow-camera-far={300}
+        shadow-camera-far={400}
         shadow-bias={-0.0005}
       />
       <Suspense fallback={null}>
@@ -124,29 +127,38 @@ function Driver({
   );
 }
 
+/** Late-afternoon sun: low, warm, long shadows. Used for both the sky shader and the shadow-casting light. */
+const SUN_DIR = new THREE.Vector3(420, 95, 210).normalize();
+
 function World({ track }: { track: Track }) {
+  const layout = useMemo(() => buildLayout(track), [track]);
   return (
     <>
-      <color attach="background" args={["#a9c9e6"]} />
-      <Sky sunPosition={[200, 140, 100]} turbidity={3} rayleigh={0.5} mieCoefficient={0.004} />
-      <fog attach="fog" args={["#b9d2e6", 220, 1500]} />
-      <hemisphereLight args={["#e6f2ff", "#51703d", 0.8]} />
-      {/* Local reflection map (no network): bright sky above, a few light strips for paint highlights. */}
+      <color attach="background" args={["#c9d6df"]} />
+      <Sky sunPosition={SUN_DIR.clone().multiplyScalar(1000).toArray()} turbidity={5} rayleigh={0.9} mieCoefficient={0.006} mieDirectionalG={0.85} />
+      <fog attach="fog" args={["#d4dadb", 260, 1500]} />
+      <hemisphereLight args={["#e4ecf5", "#56693a", 0.7]} />
+      {/* Local reflection map (no network): bright sky above, a warm strip toward the sun, a few highlights. */}
       <Environment resolution={256} environmentIntensity={0.6}>
-        <Lightformer form="rect" intensity={2} color="#cfe4ff" position={[0, 12, 0]} rotation-x={Math.PI / 2} scale={[40, 40, 1]} />
-        <Lightformer form="rect" intensity={4} position={[-8, 5, -6]} rotation-y={Math.PI / 3} scale={[12, 1.2, 1]} />
-        <Lightformer form="rect" intensity={4} position={[8, 5, 6]} rotation-y={-Math.PI / 2.5} scale={[12, 1.2, 1]} />
+        <Lightformer form="rect" intensity={2} color="#d6e6f7" position={[0, 12, 0]} rotation-x={Math.PI / 2} scale={[40, 40, 1]} />
+        <Lightformer form="rect" intensity={5} color="#ffd9a8" position={SUN_DIR.clone().multiplyScalar(15).toArray()} scale={[14, 3, 1]} target={[0, 0, 0]} />
+        <Lightformer form="rect" intensity={3} position={[-8, 5, -6]} rotation-y={Math.PI / 3} scale={[12, 1.2, 1]} />
         <Lightformer form="rect" intensity={1} color="#4f7a3a" position={[0, -6, 0]} rotation-x={-Math.PI / 2} scale={[40, 40, 1]} />
       </Environment>
       <Ground />
       <Mountains track={track} />
+      <Hills track={track} />
       <Road track={track} />
+      <GravelTraps track={track} layout={layout} />
       <FinishLine track={track} />
-      <Grandstand track={track} />
-      <TyreWalls track={track} />
-      <Billboards track={track} />
+      <CircuitBoxes layout={layout} />
+      <TimingTower layout={layout} seed={track.seed} />
+      <Flags layout={layout} />
+      <FerrisWheel layout={layout} />
+      <TyreWalls track={track} layout={layout} />
+      <Billboards track={track} layout={layout} />
       <Cones track={track} />
-      <Trees track={track} />
+      <Trees track={track} reserved={layout.reserved} />
     </>
   );
 }

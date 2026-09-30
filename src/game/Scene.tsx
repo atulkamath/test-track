@@ -226,7 +226,7 @@ export function Ground() {
 
 
 /** Scenery only (not part of the sim): trees scattered off the road, seeded so the layout is stable per track. */
-export function Trees({ track }: { track: Track }) {
+export function Trees({ track, reserved }: { track: Track; reserved: { x: number; z: number; r: number }[] }) {
   const { trunks, crowns } = useMemo(() => {
     const rand = mulberry32(hashString(track.seed + ":trees"));
     const clear = track.halfWidth + 9;
@@ -234,17 +234,17 @@ export function Trees({ track }: { track: Track }) {
     const q = new THREE.Quaternion();
     const trunkMats: THREE.Matrix4[] = [];
     const crownMats: THREE.Matrix4[] = [];
-    for (let tries = 0; tries < 2000 && trunkMats.length < 320; tries++) {
-      const x = (rand() - 0.5) * 900;
-      const z = (rand() - 0.5) * 900;
+    for (let tries = 0; tries < 6000 && trunkMats.length < 1100; tries++) {
+      const x = (rand() - 0.5) * 1300;
+      const z = (rand() - 0.5) * 1300;
+      if (reserved.some((r) => (r.x - x) ** 2 + (r.z - z) ** 2 < r.r * r.r)) continue;
       if (track.points.some((p) => (p.x - x) ** 2 + (p.z - z) ** 2 < clear * clear)) continue;
-      if ((track.points[0].x - x) ** 2 + (track.points[0].z - z) ** 2 < 55 * 55) continue; // grandstand area
       const s = 0.7 + rand() * 0.9;
       trunkMats.push(m.compose(new THREE.Vector3(x, 1.2 * s, z), q, new THREE.Vector3(s, s, s)).clone());
       crownMats.push(m.compose(new THREE.Vector3(x, 4.2 * s, z), q, new THREE.Vector3(s, s, s)).clone());
     }
     return { trunks: trunkMats, crowns: crownMats };
-  }, [track]);
+  }, [track, reserved]);
 
   const setMatrices = (mats: THREE.Matrix4[]) => (mesh: THREE.InstancedMesh | null) => {
     if (!mesh) return;
