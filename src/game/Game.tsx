@@ -10,7 +10,7 @@ import { Sound } from "./audio";
 import { CameraRig, VIEWS } from "./camera";
 import { animateCar, Car, newCarAnim, PLAYER_MODEL } from "./Car";
 import { Cockpit, EYE, type CockpitHandle } from "./Cockpit";
-import { gearbox } from "./gearbox";
+import { Gearbox } from "./gearbox";
 import { Crowd } from "./Crowd";
 import { BigScreen, Blimp, Clouds, Helicopter, Lake, Paddock } from "./Life";
 import { Obstacles, SkidMarks, Traffic, type SkidHandle } from "./Dynamic";
@@ -43,6 +43,19 @@ function todaySeed(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
+/** Gear + rpm to show: neutral at idle until the run starts. */
+function gearDisplay(g: Gearbox, started: boolean): [number, number] {
+  return started ? [g.gear, g.rpm] : [0, 900];
+}
+
+function resetGears(g: Gearbox) {
+  g.reset();
+}
+
+function updateGears(g: Gearbox, speed: number, delta: number) {
+  return g.update(speed, delta);
+}
+
 /** Advances the engine every frame and moves the car mesh + chase camera. */
 function Driver({
   engine,
@@ -53,6 +66,7 @@ function Driver({
   layout,
   view,
   sound,
+  gears,
 }: {
   engine: Engine;
   input: React.RefObject<number>;
@@ -62,6 +76,7 @@ function Driver({
   layout: Layout;
   view: React.RefObject<number>;
   sound: React.RefObject<Sound | null>;
+  gears: Gearbox;
 }) {
   const car = useRef<THREE.Group>(null);
   const sun = useRef<THREE.DirectionalLight>(null);
@@ -100,11 +115,11 @@ function Driver({
     if (cockpitGroup.current) cockpitGroup.current.visible = viewName === "Cockpit";
 
     // Gears: the cockpit hand reaches for the lever and the engine note cuts on every change.
-    const box = gearbox(speed);
-    const gear = started.current ? box.gear : 0;
-    if (gear !== lastGear.current && lastGear.current !== 0 && gear !== 0) sound.current?.shift();
+    const shifted = started.current && updateGears(gears, speed, delta);
+    const gear = started.current ? gears.gear : 0;
+    if (shifted && lastGear.current !== 0) sound.current?.shift();
     lastGear.current = gear;
-    if (viewName === "Cockpit") cockpit.current?.update({ steer, gear, speedKmh: Math.abs(speed) * 3.6, rpm: started.current ? box.rpm : 900, delta });
+    if (viewName === "Cockpit") cockpit.current?.update({ steer, gear, speedKmh: Math.abs(speed) * 3.6, rpm: started.current ? gears.rpm : 900, delta });
 
     // Sound: engine from the cosmetic gearbox, tyres from sideways slip, crowd from nearby fans.
     const cn = crowdNear.current;
@@ -115,7 +130,7 @@ function Driver({
     }
     const slip = Math.abs(sim.vx * COS[sim.heading] - sim.vz * SIN[sim.heading]);
     sound.current?.update({
-      rpm: started.current ? gearbox(speed).rpm : 900,
+      rpm: started.current ? gears.rpm : 900,
       throttle: started.current && !engine.finished && (input.current & UP) !== 0,
       speed,
       slip: sim.offRoad ? 0 : slip,
@@ -214,6 +229,7 @@ export default function Game() {
   const track = useMemo(() => generateTrack(todaySeed()), []);
   const layout = useMemo(() => buildLayout(track), [track]);
   const skids = useRef<SkidHandle>(null);
+  const gears = useMemo(() => new Gearbox(), []);
   const view = useRef(0);
   const [viewIdx, setViewIdx] = useState(0);
   const [viewName, setViewName] = useState<string | null>(null);
@@ -232,11 +248,12 @@ export default function Game() {
 
   const restart = useCallback(() => {
     skids.current?.clear();
+    resetGears(gears);
     setEngine(new Engine(track));
     setLapTicks(null);
     setStarted(false);
     startedRef.current = false;
-  }, [track]);
+  }, [track, gears]);
 
   const cycleView = useCallback(() => {
     view.current = (view.current + 1) % VIEWS.length;
@@ -295,14 +312,15 @@ export default function Game() {
   const onTick = useCallback(() => {
     const s = engine.sim.state;
     if (timeEl.current) timeEl.current.textContent = formatTicks(s.tick);
-    tacho.current?.update(s.car.speed);
+    const [gear, rpm] = gearDisplay(gears, startedRef.current);
+    tacho.current?.update(s.car.speed, gear, rpm);
     if (offRoadEl.current) offRoadEl.current.style.opacity = s.car.offRoad ? "1" : "0";
     if (s.lapTicks !== null && lapTicks === null) {
       const t = s.lapTicks;
       setLapTicks(t);
       setBest((b) => (b === null || t < b ? t : b));
     }
-  }, [engine, lapTicks]);
+  }, [engine, lapTicks, gears]);
 
   const download = () => {
     const blob = new Blob([JSON.stringify(engine.run())], { type: "application/json" });
@@ -322,7 +340,7 @@ export default function Game() {
         camera={{ fov: 58, near: 0.1, far: 3200 }}
       >
         <World track={track} layout={layout} />
-        <Driver engine={engine} input={input} started={startedRef} onTick={onTick} skids={skids} layout={layout} view={view} sound={sound} />
+        <Driver engine={engine} input={input} started={startedRef} onTick={onTick} skids={skids} layout={layout} view={view} sound={sound} gears={gears} />
         <Traffic engine={engine} skids={skids} />
         <Obstacles engine={engine} />
         <SkidMarks ref={skids} />

@@ -2,7 +2,7 @@
 
 import { forwardRef, useImperativeHandle, useRef } from "react";
 import styles from "./game.module.css";
-import { gearbox, MAX_RPM } from "./gearbox";
+import { MAX_RPM } from "./gearbox";
 
 const REDLINE = 7500;
 const SWEEP = 240; // degrees of dial travel
@@ -24,7 +24,7 @@ function arc(from: number, to: number, r: number) {
 }
 
 export interface TachoHandle {
-  update(speedMs: number): void;
+  update(speedMs: number, gear: number, rpm: number): void;
 }
 
 export const Tacho = forwardRef<TachoHandle>(function Tacho(_, ref) {
@@ -34,9 +34,8 @@ export const Tacho = forwardRef<TachoHandle>(function Tacho(_, ref) {
   const rpmSmooth = useRef(1000);
 
   useImperativeHandle(ref, () => ({
-    update(speedMs: number) {
+    update(speedMs: number, g: number, target: number) {
       const kmh = Math.abs(speedMs) * 3.6;
-      const { gear: g, rpm: target } = gearbox(speedMs);
       rpmSmooth.current += (target - rpmSmooth.current) * 0.25;
       needle.current?.setAttribute("transform", `rotate(${rpmAngle(rpmSmooth.current)} 100 100)`);
       if (gear.current) gear.current.textContent = speedMs < -0.5 ? "R" : kmh < 1 ? "N" : String(g);
