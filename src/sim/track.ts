@@ -1,3 +1,4 @@
+import { generateObstacles, type Obstacle } from "./obstacles";
 import { hashString, mulberry32 } from "./rng";
 import { dcos, dsin } from "./trig";
 
@@ -22,6 +23,7 @@ export interface Track {
   halfWidth: number;
   /** gates[0] is start/finish; a lap = gates 1..n-1 in order, then gate 0. */
   gates: Gate[];
+  obstacles: Obstacle[];
   length: number;
 }
 
@@ -141,7 +143,9 @@ function build(seed: string, points: Vec2[]): Track {
     const nz = t.x * GATE_HALF_LENGTH;
     gates.push({ a: { x: p.x - nx, z: p.z - nz }, b: { x: p.x + nx, z: p.z + nz }, t });
   }
-  return { seed, points, tangents, halfWidth: HALF_WIDTH, gates, length: n * SPACING };
+  const track: Track = { seed, points, tangents, halfWidth: HALF_WIDTH, gates, obstacles: [], length: n * SPACING };
+  track.obstacles = generateObstacles(track);
+  return track;
 }
 
 /** Distance from (x, z) to the centreline. Full scan: ~500 points, cheap and order-independent. */

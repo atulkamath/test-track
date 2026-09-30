@@ -18,7 +18,7 @@ function scriptedInputs(ticks: number): number[] {
 
 describe("determinism", () => {
   it("same seed + inputs -> identical state every run", () => {
-    const run = { version: 1 as const, seed: "2026-10-01", inputs: scriptedInputs(1800) };
+    const run = { version: 2 as const, seed: "2026-10-01", inputs: scriptedInputs(1800) };
     const a = replay(run);
     const b = replay(run);
     expect(a).toEqual(b);
@@ -28,7 +28,7 @@ describe("determinism", () => {
     const inputs = scriptedInputs(900);
     const sim = createSim("2026-10-01");
     inputs.forEach((i) => step(sim, i));
-    expect(hashState(sim.state)).toBe(replay({ version: 1, seed: "2026-10-01", inputs }).hash);
+    expect(hashState(sim.state)).toBe(replay({ version: 2, seed: "2026-10-01", inputs }).hash);
   });
 
   it("different inputs -> different state", () => {
@@ -36,19 +36,19 @@ describe("determinism", () => {
     const changed = [...inputs];
     changed[300] ^= LEFT;
     const seed = "2026-10-01";
-    expect(replay({ version: 1, seed, inputs }).hash).not.toBe(replay({ version: 1, seed, inputs: changed }).hash);
+    expect(replay({ version: 2, seed, inputs }).hash).not.toBe(replay({ version: 2, seed, inputs: changed }).hash);
   });
 
   // Golden values: if these change, sim behaviour changed and every stored run is invalidated.
   // Update deliberately, never to "make the test pass".
   it("golden: scripted run", () => {
-    expect(replay({ version: 1, seed: "golden", inputs: scriptedInputs(1200) }).hash).toBe("abcb366c");
+    expect(replay({ version: 2, seed: "golden", inputs: scriptedInputs(1200) }).hash).toBe("1f986b19");
   });
 
   it("golden: autopilot lap", () => {
     const run = autopilotRun("golden");
     const result = replay(run);
-    expect({ lapTicks: result.lapTicks, hash: result.hash }).toEqual({ lapTicks: 1173, hash: "41aa06df" });
+    expect({ lapTicks: result.lapTicks, hash: result.hash }).toEqual({ lapTicks: 1240, hash: "5ec78a3e" });
   });
 });
 
@@ -78,7 +78,7 @@ describe("laps", () => {
   it("no lap without passing every checkpoint (reversing over the line)", () => {
     // Drive backwards over the start line: gate 0 is behind the start position.
     const inputs = Array(600).fill(DOWN);
-    expect(replay({ version: 1, seed: "2026-10-01", inputs }).lapTicks).toBeNull();
+    expect(replay({ version: 2, seed: "2026-10-01", inputs }).lapTicks).toBeNull();
   });
 
   it("no lap when skipping a checkpoint", () => {

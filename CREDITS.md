@@ -6,12 +6,13 @@
 - Zip SHA-256: fac7dacac5c7874348cf19729af3ef205f3d366493edaf0a827d93f4fdf3d0c4
 - License: CC0 1.0 (public domain) — https://creativecommons.org/publicdomain/zero/1.0/
   (copy in `public/models/LICENSE-kenney-car-kit.txt`)
-- Files used:
-  - `Models/GLB format/sedan-sports.glb` -> `public/models/sedan-sports.glb`
-  - `Models/GLB format/Textures/colormap.png` -> `public/models/Textures/colormap.png`
+- Files used (all from `Models/GLB format/`, copied unchanged to `public/models/`):
+  - `sedan-sports.glb` (player car)
+  - `hatchback-sports.glb`, `race-future.glb`, `race.glb`, `sedan.glb` (dummy AI cars)
+  - `Textures/colormap.png` -> `public/models/Textures/colormap.png` (shared by all cars)
 
 ## Libraries
 three, @react-three/fiber, @react-three/drei, @react-three/postprocessing: MIT. postprocessing: Zlib. n8ao (ambient occlusion): ISC.
 HUD font: Exo 2 (SIL Open Font License), via next/font/google.
 
-Everything else (track, trees, scenery, textures, billboards) is generated in code.
+Everything else (track, trees, scenery, spectators, textures, billboards) is generated in code.

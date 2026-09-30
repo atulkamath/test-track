@@ -1,5 +1,6 @@
 // Where the circuit set pieces go. Rendering only: nothing here touches the sim.
 import type { Track } from "@/sim";
+import { hashString, mulberry32 } from "@/sim/rng";
 
 export const KERB = 1.2;
 
@@ -33,8 +34,22 @@ export interface Spot {
   rot: number;
 }
 
+/** One spectator. Faces local +z (rot turns them toward the track). action: 0 idle, 1 clap, 2 wave, 3 cheer, 4 jump. */
+export interface Person {
+  x: number;
+  y: number;
+  z: number;
+  rot: number;
+  seated: boolean;
+  action: number;
+  /** 0..1 baseline excitement; everyone gets louder as the car passes. */
+  mood: number;
+  scale: number;
+}
+
 export interface Layout {
   boxes: Box[];
+  people: Person[];
   flags: Spot[];
   tower: Spot | null;
   wheel: Spot | null;
@@ -94,10 +109,14 @@ export function buildLayout(track: Track): Layout {
   const hw = track.halfWidth;
   const n = track.points.length;
   const boxes: Box[] = [];
+  const people: Person[] = [];
+  const rand = mulberry32(hashString(track.seed + ":crowd"));
   const flags: Spot[] = [];
   const reserved: Layout["reserved"] = [];
   const cornerSide = computeCornerSides(track);
 
+  const isReserved = (x: number, z: number, pad: number) =>
+    reserved.some((r) => (r.x - x) ** 2 + (r.z - z) ** 2 < (r.r + pad) ** 2);
   const fits = (f: Frame, from: number, to: number) => {
     for (let d = from; Math.abs(d) <= Math.abs(to); d += Math.sign(to) * 3) {
       const p = at(f, d);
@@ -110,6 +129,28 @@ export function buildLayout(track: Track): Layout {
     boxes.push({ x: p.x, y, z: p.z, rot: f.rot, sx, sy, sz, kind });
   };
 
+  /** Facing the track from side s: turn local +z toward the centreline. */
+  const faceTrack = (f: Frame, s: number) => Math.atan2(s * f.tz, -s * f.tx);
+  const person = (f: Frame, s: number, off: number, along: number, y: number, seated: boolean) => {
+    const p = at(f, s * off, along);
+    const r = rand();
+    const action = r < 0.35 ? 0 : r < 0.6 ? 1 : r < 0.75 ? 2 : r < 0.9 ? 3 : seated ? 3 : 4;
+    people.push({
+      x: p.x,
+      y,
+      z: p.z,
+      rot: faceTrack(f, s) + (rand() - 0.5) * 0.5,
+      seated,
+      action,
+      mood: rand(),
+      scale: 0.9 + rand() * 0.2,
+    });
+  };
+  /** A loose standing crowd `depth` metres deep starting `off` from the centreline. */
+  const standingCrowd = (f: Frame, s: number, off: number, depth: number, len: number, count: number) => {
+    for (let k = 0; k < count; k++) person(f, s, off + rand() * depth, (rand() - 0.5) * len, 0, false);
+  };
+
   /** A covered grandstand segment: stepped crowd tiers, back wall, cantilever roof, banner + catch fence in front. */
   const grandstand = (f: Frame, s: number, base: number, tiers: number, len: number, idx: number, roofed: boolean) => {
     const rise = 0.75;
@@ -120,6 +161,8 @@ export function buildLayout(track: Track): Layout {
     for (let k = 0; k < tiers; k++) {
       const h = (k + 1) * rise + 1.2;
       add(f, s * (base + k * depth + depth / 2), h / 2, depth, h, len, "crowd");
+      // Seated spectators along the front edge of each tier (legs hang over the step).
+      for (let a = -len / 2 + 0.35; a < len / 2; a += 0.62) if (rand() < 0.88) person(f, s, base + k * depth + 0.4, a, h, true);
     }
     const back = base + tiers * depth + 0.25;
     const top = tiers * rise + 1.2;
@@ -192,6 +235,29 @@ export function buildLayout(track: Track): Layout {
     if (clearance(track, p.x, p.z) < hw + 5) continue;
     add(f, s * off, 1.9, 0.06, 3.8, segLen, "fence");
     add(f, s * off, 1.9, 0.18, 3.8, 0.18, "steel", segLen / 2);
+    const back = at(f, s * (off + 5));
+    if (clearance(track, back.x, back.z) >= hw + 8 && !isReserved(back.x, back.z, 2)) {
+      standingCrowd(f, s, off + 1.2, 3.5, segLen, 6 + Math.floor(rand() * 4));
+      reserved.push({ ...at(f, s * (off + 3)), r: 5 });
+    }
+  }
+
+  // --- Spectator banks along the straights: low fence, people standing behind it. ---
+  for (let i = 0; i < n; i += SEG) {
+    if (i > n - 45 || i < 36) continue; // start straight has the grandstand and pits
+    if ([-3, 0, 3].some((d) => cornerSide[(i + d + n) % n] !== 0)) continue;
+    const f = frame(track, i);
+    for (const s of [1, -1]) {
+      if (rand() > 0.45) continue;
+      const off = hw + KERB + 6;
+      const a = at(f, s * off);
+      const b = at(f, s * (off + 6));
+      if (clearance(track, a.x, a.z) < hw + 4 || clearance(track, b.x, b.z) < hw + 8) continue;
+      if (isReserved(b.x, b.z, 3)) continue;
+      add(f, s * off, 0.55, 0.12, 1.1, segLen, "steel");
+      standingCrowd(f, s, off + 0.9, 3.5, segLen, 5 + Math.floor(rand() * 5));
+      reserved.push({ ...at(f, s * (off + 3)), r: 5 });
+    }
   }
 
   // --- Ferris wheel behind the main grandstand. ---
@@ -210,5 +276,5 @@ export function buildLayout(track: Track): Layout {
   if (wheel) reserved.push({ x: wheel.x, z: wheel.z, r: 30 });
   if (tower) reserved.push({ x: tower.x, z: tower.z, r: 6 });
 
-  return { boxes, flags, tower, wheel, cornerSide, reserved };
+  return { boxes, people, flags, tower, wheel, cornerSide, reserved };
 }
