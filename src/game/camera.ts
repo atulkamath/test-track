@@ -47,7 +47,7 @@ export class CameraRig {
       camera.position.copy(carRoot.localToWorld(this.desired.copy(eye)));
       // Tiny engine/road vibration that grows with speed.
       camera.position.y += (Math.random() - 0.5) * (0.002 + speedFrac * 0.006 + (offRoad ? 0.02 : 0));
-      camera.lookAt(carRoot.localToWorld(this.target.set(eye.x, eye.y - 0.12, eye.z + 12)));
+      camera.lookAt(carRoot.localToWorld(this.target.set(eye.x, eye.y - 0.85, eye.z + 12))); // ~4° down: road ahead plus wheel and shifter in frame
       fov = 72 + speedFrac * 6;
     } else if (view === "TV" && this.tvSpots.length > 0) {
       // Pick the nearest trackside camera, switching only when another is clearly closer (like a TV director).

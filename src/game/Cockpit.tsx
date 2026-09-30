@@ -11,7 +11,9 @@ export const EYE = new THREE.Vector3(0.38, 1.27, -0.2);
 const WHEEL_POS = new THREE.Vector3(0.38, 0.9, 0.22);
 const WHEEL_TILT = 0.5;
 const RIM = 0.165;
-const LEVER_PIVOT = new THREE.Vector3(-0.02, 0.7, 0.05);
+/** Raised rally-style shifter beside the wheel, so it sits inside the cockpit camera's view (~30° down, bottom right). */
+const LEVER_PIVOT = new THREE.Vector3(-0.02, 0.8, 0.3);
+const LEVER_LEN = 0.16;
 const SHOULDER_L = new THREE.Vector3(0.6, 1.06, -0.3);
 const SHOULDER_R = new THREE.Vector3(0.16, 1.06, -0.3);
 /** How long the hand spends reaching for the lever and back (seconds). */
@@ -166,7 +168,7 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
       r.updateMatrixWorld();
       anchorR.current.getWorldPosition(tmp.a);
       r.worldToLocal(tmp.a);
-      lever.current.localToWorld(tmp.knob.set(0, 0.2, 0));
+      lever.current.localToWorld(tmp.knob.set(0, LEVER_LEN + 0.01, 0));
       r.worldToLocal(tmp.knob);
       const e = THREE.MathUtils.smootherstep(reach, 0, 1);
       handR.current.position.lerpVectors(tmp.a, tmp.knob, e);
@@ -305,21 +307,30 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
       <Limb limbRef={upperR} radius={0.05} />
       <Limb limbRef={lowerR} radius={0.042} />
 
+      {/* Raised shifter tower rising from the console, with the H-gate plate on top */}
+      <mesh position={[-0.02, 0.73, 0.28]}>
+        <boxGeometry args={[0.15, 0.14, 0.2]} />
+        {trim}
+      </mesh>
+      <mesh position={[-0.02, 0.805, 0.3]}>
+        <boxGeometry args={[0.13, 0.012, 0.15]} />
+        <meshStandardMaterial color="#9aa3ad" metalness={0.85} roughness={0.25} />
+      </mesh>
       {/* Gear lever */}
       <group ref={lever} position={LEVER_PIVOT}>
-        <mesh position={[0, 0.1, 0]}>
-          <cylinderGeometry args={[0.012, 0.016, 0.2, 8]} />
-          <meshStandardMaterial color="#b9c0c7" metalness={0.8} roughness={0.25} />
+        <mesh position={[0, LEVER_LEN / 2, 0]}>
+          <cylinderGeometry args={[0.011, 0.015, LEVER_LEN, 10]} />
+          <meshStandardMaterial color="#b9c0c7" metalness={0.85} roughness={0.2} />
         </mesh>
-        <mesh position={[0, 0.215, 0]}>
-          <sphereGeometry args={[0.032, 16, 12]} />
-          <meshStandardMaterial color="#111316" roughness={0.3} />
+        <mesh position={[0, LEVER_LEN + 0.01, 0]}>
+          <sphereGeometry args={[0.03, 16, 12]} />
+          <meshStandardMaterial color="#c8322b" roughness={0.3} />
+        </mesh>
+        <mesh position={[0, 0.012, 0]}>
+          <cylinderGeometry args={[0.035, 0.045, 0.03, 12]} />
+          <meshStandardMaterial color="#0b0c0e" roughness={0.9} />
         </mesh>
       </group>
-      <mesh position={[-0.02, 0.705, 0.05]}>
-        <boxGeometry args={[0.12, 0.02, 0.14]} />
-        <meshStandardMaterial color="#0b0c0e" roughness={0.9} />
-      </mesh>
     </group>
   );
 });
