@@ -1,17 +1,29 @@
 "use client";
 
-import { forwardRef, useMemo } from "react";
+import { useMemo } from "react";
 import * as THREE from "three";
 import { hashString, mulberry32 } from "@/sim/rng";
 import type { Track } from "@/sim";
 
 const KERB_WIDTH = 1.2;
 
-/** Strip between `inner` and `outer` offsets from the centreline. Non-indexed so each quad can have its own colour. */
-function stripGeometry(track: Track, inner: number, outer: number, y: number, colorOf?: (i: number) => THREE.Color) {
+/**
+ * Strip between `inner` and `outer` offsets from the centreline. Non-indexed so each quad can have its own colour.
+ * UVs: u runs 0..1 across the strip, v runs along the track in units of `vTile` world units.
+ */
+function stripGeometry(
+  track: Track,
+  inner: number,
+  outer: number,
+  y: number,
+  colorOf?: (i: number) => THREE.Color,
+  vTile = 14,
+) {
   const { points, tangents } = track;
   const n = points.length;
+  const step = track.length / n;
   const pos: number[] = [];
+  const uv: number[] = [];
   const col: number[] = [];
   const edge = (i: number, off: number) => {
     const p = points[i % n];
@@ -19,13 +31,18 @@ function stripGeometry(track: Track, inner: number, outer: number, y: number, co
     return [p.x - t.z * off, y, p.z + t.x * off];
   };
   for (let i = 0; i < n; i++) {
-    const a0 = edge(i, inner);
-    const a1 = edge(i, outer);
-    const b0 = edge(i + 1, inner);
-    const b1 = edge(i + 1, outer);
+    const v0 = (i * step) / vTile;
+    const v1 = ((i + 1) * step) / vTile;
+    const a0 = { p: edge(i, inner), uv: [0, v0] };
+    const a1 = { p: edge(i, outer), uv: [1, v0] };
+    const b0 = { p: edge(i + 1, inner), uv: [0, v1] };
+    const b1 = { p: edge(i + 1, outer), uv: [1, v1] };
     // Winding chosen so faces point up (+y) whichever side of the centreline the strip is on.
     const tri = outer > inner ? [a0, a1, b0, a1, b1, b0] : [a0, b0, a1, a1, b0, b1];
-    for (const v of tri) pos.push(...v);
+    for (const v of tri) {
+      pos.push(...v.p);
+      uv.push(...v.uv);
+    }
     if (colorOf) {
       const c = colorOf(i);
       for (let k = 0; k < 6; k++) col.push(c.r, c.g, c.b);
@@ -33,37 +50,61 @@ function stripGeometry(track: Track, inner: number, outer: number, y: number, co
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
   if (colorOf) g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
   g.computeVertexNormals();
   return g;
 }
 
+/** Procedural noise texture (seeded, so it looks the same every load). */
+function noiseTexture(base: string, specks: string[], count: number, seed: number, repeat: number) {
+  const c = document.createElement("canvas");
+  c.width = c.height = 256;
+  const ctx = c.getContext("2d")!;
+  const rand = mulberry32(seed);
+  ctx.fillStyle = base;
+  ctx.fillRect(0, 0, 256, 256);
+  for (let k = 0; k < count; k++) {
+    ctx.fillStyle = specks[Math.floor(rand() * specks.length)];
+    ctx.globalAlpha = 0.25 + rand() * 0.5;
+    const s = rand() < 0.9 ? 1 : 2;
+    ctx.fillRect(Math.floor(rand() * 256), Math.floor(rand() * 256), s, s);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(repeat, repeat);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  return t;
+}
+
 export function Road({ track }: { track: Track }) {
   const hw = track.halfWidth;
-  const { road, kerbs, line } = useMemo(() => {
+  const { road, kerbs, lines, tarmac } = useMemo(() => {
     const red = new THREE.Color("#d63a2f");
     const white = new THREE.Color("#f2f2f2");
     const kerbColor = (i: number) => (Math.floor(i / 2) % 2 ? red : white);
     const kerbs = [stripGeometry(track, hw, hw + KERB_WIDTH, 0.03, kerbColor), stripGeometry(track, -hw, -hw - KERB_WIDTH, 0.03, kerbColor)];
-    const dash = new THREE.Color("#ffffff");
-    const gap = new THREE.Color("#3a3d42");
-    const line = stripGeometry(track, -0.15, 0.15, 0.025, (i) => (Math.floor(i / 3) % 2 ? dash : gap));
-    return { road: stripGeometry(track, -hw, hw, 0.02), kerbs, line };
+    const lines = [stripGeometry(track, hw - 0.7, hw - 0.4, 0.025), stripGeometry(track, -hw + 0.7, -hw + 0.4, 0.025)];
+    const tarmac = noiseTexture("#50545a", ["#2b2e33", "#6c7076", "#3b3f44", "#7d8187"], 9000, 11, 1);
+    return { road: stripGeometry(track, -hw, hw, 0.02), kerbs, lines, tarmac };
   }, [track, hw]);
 
   return (
     <group>
       <mesh geometry={road} receiveShadow>
-        <meshStandardMaterial color="#3a3d42" roughness={0.95} />
+        <meshStandardMaterial map={tarmac} roughness={0.9} />
       </mesh>
       {kerbs.map((g, i) => (
         <mesh key={i} geometry={g} receiveShadow>
           <meshStandardMaterial vertexColors roughness={0.8} />
         </mesh>
       ))}
-      <mesh geometry={line}>
-        <meshStandardMaterial vertexColors roughness={0.9} />
-      </mesh>
+      {lines.map((g, i) => (
+        <mesh key={i} geometry={g} receiveShadow>
+          <meshStandardMaterial color="#f4f4f4" roughness={0.8} />
+        </mesh>
+      ))}
     </group>
   );
 }
@@ -157,40 +198,15 @@ export function Cones({ track }: { track: Track }) {
 }
 
 export function Ground() {
+  const grass = useMemo(() => noiseTexture("#5f9442", ["#4c7d35", "#6fa64d", "#557f3a", "#78ad55"], 14000, 23, 250), []);
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
       <planeGeometry args={[3000, 3000]} />
-      <meshStandardMaterial color="#5d8f45" roughness={1} />
+      <meshStandardMaterial map={grass} roughness={1} />
     </mesh>
   );
 }
 
-/** Box car; front faces +z so rotation.y = heading angle. */
-export const CarModel = forwardRef<THREE.Group>(function CarModel(_, ref) {
-  return (
-    <group ref={ref}>
-      <mesh position={[0, 0.55, 0]} castShadow>
-        <boxGeometry args={[1.8, 0.6, 3.8]} />
-        <meshStandardMaterial color="#e63946" metalness={0.3} roughness={0.4} />
-      </mesh>
-      <mesh position={[0, 1.05, -0.3]} castShadow>
-        <boxGeometry args={[1.5, 0.5, 1.8]} />
-        <meshStandardMaterial color="#1d2a3a" metalness={0.5} roughness={0.2} />
-      </mesh>
-      {[
-        [-0.95, 1.25],
-        [0.95, 1.25],
-        [-0.95, -1.25],
-        [0.95, -1.25],
-      ].map(([x, z]) => (
-        <mesh key={`${x},${z}`} position={[x, 0.38, z]} rotation={[0, 0, Math.PI / 2]} castShadow>
-          <cylinderGeometry args={[0.38, 0.38, 0.3, 16]} />
-          <meshStandardMaterial color="#111" />
-        </mesh>
-      ))}
-    </group>
-  );
-});
 
 /** Scenery only (not part of the sim): trees scattered off the road, seeded so the layout is stable per track. */
 export function Trees({ track }: { track: Track }) {
@@ -205,6 +221,7 @@ export function Trees({ track }: { track: Track }) {
       const x = (rand() - 0.5) * 900;
       const z = (rand() - 0.5) * 900;
       if (track.points.some((p) => (p.x - x) ** 2 + (p.z - z) ** 2 < clear * clear)) continue;
+      if ((track.points[0].x - x) ** 2 + (track.points[0].z - z) ** 2 < 55 * 55) continue; // grandstand area
       const s = 0.7 + rand() * 0.9;
       trunkMats.push(m.compose(new THREE.Vector3(x, 1.2 * s, z), q, new THREE.Vector3(s, s, s)).clone());
       crownMats.push(m.compose(new THREE.Vector3(x, 4.2 * s, z), q, new THREE.Vector3(s, s, s)).clone());

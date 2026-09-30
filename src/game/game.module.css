@@ -3,48 +3,112 @@
   inset: 0;
 }
 
-.hud {
-  position: absolute;
-  top: 16px;
-  left: 20px;
-  pointer-events: none;
-  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+/* Canvas is rendered at ~448 lines; upscale with hard pixels like a PS2 on a flat panel. */
+.canvas canvas {
+  image-rendering: pixelated;
 }
 
-.seed {
-  font-size: 13px;
-  letter-spacing: 0.08em;
+.hud {
+  position: absolute;
+  top: 18px;
+  left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: none;
+  font-family: var(--font-exo), system-ui, sans-serif;
+  font-style: italic;
+}
+
+.box {
+  min-width: 210px;
+  padding: 4px 14px 6px 12px;
+  background: linear-gradient(90deg, rgba(8, 10, 16, 0.78), rgba(8, 10, 16, 0.35));
+  border-left: 4px solid #f2c230;
+  transform: skewX(-10deg);
+}
+
+.label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  opacity: 0.85;
+  color: #f2c230;
+}
+
+.time,
+.best {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.05;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.5);
 }
 
 .time {
-  font-family: var(--font-geist-mono), ui-monospace, monospace;
-  font-size: 44px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.1;
+  font-size: 40px;
 }
 
 .best {
-  font-family: var(--font-geist-mono), ui-monospace, monospace;
-  font-size: 15px;
-  opacity: 0.9;
+  font-size: 22px;
 }
 
-.speed {
+.seed {
+  margin-left: 4px;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  opacity: 0.8;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+.tacho {
   position: absolute;
-  right: 20px;
-  top: 16px;
-  font-family: var(--font-geist-mono), ui-monospace, monospace;
-  font-size: 15px;
-  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  right: 18px;
+  bottom: 14px;
   pointer-events: none;
+  font-family: var(--font-exo), system-ui, sans-serif;
 }
 
-.speed span {
-  font-size: 32px;
-  font-weight: 700;
+.tachoNum {
+  font-size: 15px;
+  font-weight: 800;
+  font-style: italic;
+  text-anchor: middle;
+}
+
+.tachoUnit {
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  fill: rgba(255, 255, 255, 0.6);
+  text-anchor: middle;
+}
+
+.tachoGear {
+  font-size: 30px;
+  font-weight: 800;
+  font-style: italic;
+  fill: #f2c230;
+  text-anchor: middle;
+}
+
+.tachoSpeed {
+  position: absolute;
+  right: 150px;
+  bottom: 12px;
+  font-style: italic;
+  font-weight: 800;
+  text-align: right;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.55);
+}
+
+.tachoSpeed span {
+  font-size: 46px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tachoSpeed small {
+  margin-left: 4px;
+  font-size: 13px;
+  letter-spacing: 0.08em;
 }
 
 .offRoad {
@@ -76,6 +140,7 @@
 }
 
 .panel {
+  font-family: var(--font-exo), system-ui, sans-serif;
   position: absolute;
   left: 50%;
   top: 50%;
@@ -134,6 +199,12 @@
 }
 
 @media (pointer: coarse) {
+  .tacho {
+    transform: scale(0.7);
+    transform-origin: bottom right;
+    bottom: 110px;
+  }
+
   .touch {
     position: absolute;
     left: 16px;
