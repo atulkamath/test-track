@@ -5,15 +5,18 @@ import { Environment, Lightformer, Sky } from "@react-three/drei";
 import { Bloom, EffectComposer, HueSaturation, N8AO, SMAA, Vignette } from "@react-three/postprocessing";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
-import { DOWN, LEFT, RIGHT, UP, generateTrack, type Track } from "@/sim";
+import { COS, DOWN, LEFT, RIGHT, SIN, UP, generateTrack, type Track } from "@/sim";
+import { Sound } from "./audio";
+import { CameraRig, VIEWS } from "./camera";
 import { animateCar, Car, newCarAnim, PLAYER_MODEL } from "./Car";
+import { gearbox } from "./gearbox";
 import { Crowd } from "./Crowd";
 import { Obstacles, SkidMarks, Traffic, type SkidHandle } from "./Dynamic";
 import { Engine, formatTicks } from "./engine";
 import { FinishLine, GatePosts, Ground, Road, RunOff, Trees } from "./Scene";
 import { Tacho, type TachoHandle } from "./Tacho";
 import { Pylons, Ridges, Town } from "./Background";
-import { CircuitBoxes, FerrisWheel, Flags, GravelTraps, TimingTower } from "./Circuit";
+import { CarPark, CircuitBoxes, FerrisWheel, Flags, GravelTraps, Tents, TimingTower } from "./Circuit";
 import { buildLayout, type Layout } from "./layout";
 import { Billboards } from "./Trackside";
 import styles from "./game.module.css";
@@ -45,20 +48,24 @@ function Driver({
   started,
   onTick,
   skids,
+  layout,
+  view,
+  sound,
 }: {
   engine: Engine;
   input: React.RefObject<number>;
   started: React.RefObject<boolean>;
   onTick: () => void;
   skids: React.RefObject<SkidHandle | null>;
+  layout: Layout;
+  view: React.RefObject<number>;
+  sound: React.RefObject<Sound | null>;
 }) {
   const car = useRef<THREE.Group>(null);
-  const target = useMemo(() => new THREE.Vector3(), []);
-  const desired = useMemo(() => new THREE.Vector3(), []);
-  const lookAt = useMemo(() => new THREE.Vector3(), []);
-  const snapped = useRef(false);
   const sun = useRef<THREE.DirectionalLight>(null);
   const anim = useMemo(() => newCarAnim(), []);
+  const rig = useMemo(() => new CameraRig(layout.tvSpots.map((s) => new THREE.Vector3(s.x, s.y, s.z))), [layout]);
+  const crowdNear = useRef({ level: 0, frame: 0 });
 
   useFrame(({ camera }, delta) => {
     if (started.current) engine.advance(delta, () => input.current);
@@ -79,29 +86,26 @@ function Driver({
       sun.current.target.updateMatrixWorld();
     }
 
-    const fx = Math.sin(p.angle);
-    const fz = Math.cos(p.angle);
-    desired.set(p.x - fx * 11, 4.6, p.z - fz * 11);
-    target.set(p.x + fx * 6, 1, p.z + fz * 6);
-    if (!snapped.current) {
-      camera.position.copy(desired);
-      lookAt.copy(target);
-      snapped.current = true;
-    }
-    const k = 1 - Math.exp(-delta * 6);
-    camera.position.lerp(desired, k);
-    lookAt.lerp(target, 1 - Math.exp(-delta * 10));
-    // A little rumble on the grass.
-    if (engine.sim.state.car.offRoad && Math.abs(speed) > 3) camera.position.y += (Math.random() - 0.5) * 0.08;
-    camera.lookAt(lookAt);
+    const sim = engine.sim.state.car;
+    rig.update(camera as THREE.PerspectiveCamera, VIEWS[view.current], p, speed, sim.offRoad, delta);
+    // Hide the player's car when the camera is inside it.
+    if (car.current) car.current.visible = VIEWS[view.current] !== "Bumper";
 
-    // Widen the lens as speed builds.
-    const cam = camera as THREE.PerspectiveCamera;
-    const fov = 58 + Math.min(Math.abs(speed) / 55, 1) * 14;
-    if (Math.abs(cam.fov - fov) > 0.05) {
-      cam.fov += (fov - cam.fov) * (1 - Math.exp(-delta * 3));
-      cam.updateProjectionMatrix();
+    // Sound: engine from the cosmetic gearbox, tyres from sideways slip, crowd from nearby fans.
+    const cn = crowdNear.current;
+    if (cn.frame++ % 10 === 0) {
+      let near = 0;
+      for (const f of layout.people) if ((f.x - p.x) ** 2 + (f.z - p.z) ** 2 < 90 * 90) near++;
+      cn.level = Math.min(1, near / 350);
     }
+    const slip = Math.abs(sim.vx * COS[sim.heading] - sim.vz * SIN[sim.heading]);
+    sound.current?.update({
+      rpm: started.current ? gearbox(speed).rpm : 900,
+      throttle: started.current && !engine.finished && (input.current & UP) !== 0,
+      speed,
+      slip: sim.offRoad ? 0 : slip,
+      crowd: cn.level,
+    });
   });
 
   return (
@@ -158,6 +162,8 @@ function World({ track, layout }: { track: Track; layout: Layout }) {
       <FerrisWheel layout={layout} />
       <Billboards track={track} layout={layout} />
       <GatePosts track={track} />
+      <Tents layout={layout} />
+      <CarPark layout={layout} />
       <Trees track={track} reserved={layout.reserved} />
     </>
   );
@@ -180,6 +186,11 @@ export default function Game() {
   const track = useMemo(() => generateTrack(todaySeed()), []);
   const layout = useMemo(() => buildLayout(track), [track]);
   const skids = useRef<SkidHandle>(null);
+  const view = useRef(0);
+  const [viewName, setViewName] = useState<string | null>(null);
+  const [muted, setMuted] = useState(false);
+  const sound = useRef<Sound | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [engine, setEngine] = useState(() => new Engine(track));
   const [lapTicks, setLapTicks] = useState<number | null>(null);
   const [best, setBest] = useState<number | null>(null);
@@ -198,7 +209,23 @@ export default function Game() {
     startedRef.current = false;
   }, [track]);
 
+  const cycleView = useCallback(() => {
+    view.current = (view.current + 1) % VIEWS.length;
+    setViewName(VIEWS[view.current]);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setViewName(null), 1400);
+  }, []);
+
+  const toggleMute = useCallback(() => {
+    setMuted((m) => {
+      sound.current?.setMuted(!m);
+      return !m;
+    });
+  }, []);
+
   const press = useCallback((bit: number, down: boolean) => {
+    if (!sound.current) sound.current = new Sound();
+    sound.current.start();
     input.current = down ? input.current | bit : input.current & ~bit;
     if (down && !startedRef.current) {
       startedRef.current = true;
@@ -209,6 +236,8 @@ export default function Game() {
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       if (e.code === "KeyR") return restart();
+      if (e.code === "KeyC" && !e.repeat) return cycleView();
+      if (e.code === "KeyM" && !e.repeat) return toggleMute();
       const bit = KEY_BITS[e.code];
       if (bit) {
         e.preventDefault();
@@ -228,7 +257,9 @@ export default function Game() {
       window.removeEventListener("keyup", up);
       window.removeEventListener("blur", blur);
     };
-  }, [press, restart]);
+  }, [press, restart, cycleView, toggleMute]);
+
+  useEffect(() => () => sound.current?.dispose(), []);
 
   // Called every frame: write HUD text directly (no React re-render) and catch lap completion.
   const onTick = useCallback(() => {
@@ -261,7 +292,7 @@ export default function Game() {
         camera={{ fov: 58, near: 0.1, far: 3200 }}
       >
         <World track={track} layout={layout} />
-        <Driver engine={engine} input={input} started={startedRef} onTick={onTick} skids={skids} />
+        <Driver engine={engine} input={input} started={startedRef} onTick={onTick} skids={skids} layout={layout} view={view} sound={sound} />
         <Traffic engine={engine} skids={skids} />
         <Obstacles engine={engine} />
         <SkidMarks ref={skids} />
@@ -287,7 +318,16 @@ export default function Game() {
         Off road
       </div>
 
-      {!started && lapTicks === null && <div className={styles.hint}>Press ↑ / W to start</div>}
+      {!started && lapTicks === null && <div className={styles.hint}>Press ↑ / W to start · C camera · M sound</div>}
+      {viewName && <div className={styles.toast}>{viewName}</div>}
+      <div className={styles.status}>
+        <button onClick={cycleView} aria-label="Change camera">
+          📷
+        </button>
+        <button onClick={toggleMute} aria-label={muted ? "Unmute" : "Mute"}>
+          {muted ? "🔇" : "🔊"}
+        </button>
+      </div>
 
       {lapTicks !== null && (
         <div className={styles.panel}>

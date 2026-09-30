@@ -130,11 +130,11 @@ function makeMaterial(seated: boolean, uniforms: { uTime: { value: number }; uCa
   return m;
 }
 
-function CrowdGroup({ people, seated, uniforms }: { people: Person[]; seated: boolean; uniforms: Parameters<typeof makeMaterial>[1] }) {
+function CrowdGroup({ people, seated, material, seed }: { people: Person[]; seated: boolean; material: THREE.Material; seed: string }) {
   const mesh = useRef<THREE.InstancedMesh>(null);
   const geometry = useMemo(() => {
     const g = personGeometry(seated);
-    const rand = mulberry32(hashString(seated ? "seated" : "standing"));
+    const rand = mulberry32(hashString(seed));
     const color = new THREE.Color();
     const attr = (palette: string[]) => {
       const arr = new Float32Array(people.length * 3);
@@ -150,8 +150,7 @@ function CrowdGroup({ people, seated, uniforms }: { people: Person[]; seated: bo
     g.setAttribute("aHair", attr(HAIRS));
     g.setAttribute("aAnim", new THREE.InstancedBufferAttribute(new Float32Array(people.flatMap((p) => [rand(), p.action, p.mood])), 3));
     return g;
-  }, [people, seated]);
-  const material = useMemo(() => makeMaterial(seated, uniforms), [seated, uniforms]);
+  }, [people, seated, seed]);
 
   useLayoutEffect(() => {
     const m = mesh.current;
@@ -179,18 +178,32 @@ function updateUniforms(u: CrowdUniforms, time: number, x: number, z: number) {
   u.uCar.value.set(x, 0, z);
 }
 
+/** Crowd is split into grid cells so each cell can be frustum-culled on its own. */
+const CELL = 150;
+
 export function Crowd({ people, engine }: { people: Person[]; engine: Engine }) {
   const uniforms = useMemo(() => ({ uTime: { value: 0 }, uCar: { value: new THREE.Vector3() } }), []);
-  const seated = useMemo(() => people.filter((p) => p.seated), [people]);
-  const standing = useMemo(() => people.filter((p) => !p.seated), [people]);
+  const materials = useMemo(() => ({ seated: makeMaterial(true, uniforms), standing: makeMaterial(false, uniforms) }), [uniforms]);
+  const chunks = useMemo(() => {
+    const map = new Map<string, Person[]>();
+    for (const p of people) {
+      const key = `${Math.floor(p.x / CELL)},${Math.floor(p.z / CELL)},${p.seated ? 1 : 0}`;
+      const list = map.get(key);
+      if (list) list.push(p);
+      else map.set(key, [p]);
+    }
+    return [...map.entries()];
+  }, [people]);
   useFrame(({ clock }) => {
     const p = engine.pose();
     updateUniforms(uniforms, clock.elapsedTime, p.x, p.z);
   });
   return (
     <group>
-      <CrowdGroup people={seated} seated uniforms={uniforms} />
-      <CrowdGroup people={standing} seated={false} uniforms={uniforms} />
+      {chunks.map(([key, list]) => {
+        const seated = key.endsWith(",1");
+        return <CrowdGroup key={key} people={list} seated={seated} seed={key} material={seated ? materials.seated : materials.standing} />;
+      })}
     </group>
   );
 }

@@ -2,10 +2,8 @@
 
 import { forwardRef, useImperativeHandle, useRef } from "react";
 import styles from "./game.module.css";
+import { gearbox, MAX_RPM } from "./gearbox";
 
-// Purely cosmetic gearbox: the sim has no gears, this just makes the dial feel alive.
-const GEAR_TOP_KMH = [0, 55, 95, 130, 160, 185, 999];
-const MAX_RPM = 9000;
 const REDLINE = 7500;
 const SWEEP = 240; // degrees of dial travel
 const START = -120; // degrees from 12 o'clock
@@ -38,11 +36,7 @@ export const Tacho = forwardRef<TachoHandle>(function Tacho(_, ref) {
   useImperativeHandle(ref, () => ({
     update(speedMs: number) {
       const kmh = Math.abs(speedMs) * 3.6;
-      let g = 1;
-      while (g < GEAR_TOP_KMH.length - 1 && kmh > GEAR_TOP_KMH[g]) g++;
-      const lo = GEAR_TOP_KMH[g - 1];
-      const hi = Math.min(GEAR_TOP_KMH[g], 200);
-      const target = 1100 + ((kmh - lo) / (hi - lo)) * 6600;
+      const { gear: g, rpm: target } = gearbox(speedMs);
       rpmSmooth.current += (target - rpmSmooth.current) * 0.25;
       needle.current?.setAttribute("transform", `rotate(${rpmAngle(rpmSmooth.current)} 100 100)`);
       if (gear.current) gear.current.textContent = speedMs < -0.5 ? "R" : kmh < 1 ? "N" : String(g);

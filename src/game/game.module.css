@@ -229,3 +229,39 @@
 .touchBtn:active {
   background: rgba(255, 255, 255, 0.4);
 }
+
+.toast {
+  position: absolute;
+  top: 18%;
+  left: 50%;
+  transform: translateX(-50%) skewX(-10deg);
+  padding: 6px 18px;
+  background: rgba(8, 10, 16, 0.7);
+  border-left: 4px solid #f2c230;
+  font-family: var(--font-exo), system-ui, sans-serif;
+  font-style: italic;
+  font-weight: 800;
+  font-size: 18px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+.status {
+  position: absolute;
+  top: 16px;
+  right: 18px;
+  display: flex;
+  gap: 8px;
+}
+
+.status button {
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 10px;
+  background: rgba(8, 10, 16, 0.55);
+  color: #fff;
+  font-size: 18px;
+  cursor: pointer;
+}

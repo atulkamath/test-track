@@ -21,6 +21,8 @@ function useMaterials() {
       garage: new THREE.MeshStandardMaterial({ map: garageTexture(), roughness: 0.7 }),
       fence: new THREE.MeshStandardMaterial({ map: fenceTexture(), alphaTest: 0.4, side: THREE.DoubleSide, roughness: 0.6, metalness: 0.4 }),
       asphalt: new THREE.MeshStandardMaterial({ color: "#44484e", roughness: 0.95 }),
+      berm: new THREE.MeshStandardMaterial({ color: "#5a9438", roughness: 1 }),
+      marshal: new THREE.MeshStandardMaterial({ color: "#f07a1a", roughness: 0.6 }),
     };
     ADS.forEach((_, i) => {
       const map = adTexture(i);
@@ -37,9 +39,9 @@ function InstancedBoxes({ boxes, material, castShadow }: { boxes: Box[]; materia
     if (!mesh) return;
     const m = new THREE.Matrix4();
     const q = new THREE.Quaternion();
-    const up = new THREE.Vector3(0, 1, 0);
+    const e = new THREE.Euler(0, 0, 0, "YZX");
     boxes.forEach((b, i) => {
-      q.setFromAxisAngle(up, b.rot);
+      q.setFromEuler(e.set(0, b.rot, b.tilt ?? 0, "YZX"));
       m.compose(new THREE.Vector3(b.x, b.y, b.z), q, new THREE.Vector3(b.sx, b.sy, b.sz));
       mesh.setMatrixAt(i, m);
     });
@@ -63,7 +65,7 @@ export function CircuitBoxes({ layout }: { layout: Layout }) {
   return (
     <group>
       {byKind.map(([kind, boxes]) => (
-        <InstancedBoxes key={kind} boxes={boxes} material={materials[kind]} castShadow={kind !== "fence" && kind !== "asphalt"} />
+        <InstancedBoxes key={kind} boxes={boxes} material={materials[kind]} castShadow={kind !== "fence" && kind !== "asphalt" && kind !== "berm"} />
       ))}
     </group>
   );
@@ -228,3 +230,67 @@ export function GravelTraps({ track, layout }: { track: Track; layout: Layout })
   );
 }
 
+
+/** White peaked hospitality marquees. */
+export function Tents({ layout }: { layout: Layout }) {
+  if (layout.tents.length === 0) return null;
+  return (
+    <group>
+      {layout.tents.map((t, i) => (
+        <group key={i} position={[t.x, 0, t.z]} rotation={[0, t.rot + Math.PI / 4, 0]}>
+          <mesh position={[0, 1.4, 0]} castShadow receiveShadow>
+            <boxGeometry args={[8, 2.8, 8]} />
+            <meshStandardMaterial color="#f4f5f7" roughness={0.7} />
+          </mesh>
+          <mesh position={[0, 4, 0]} rotation={[0, Math.PI / 4, 0]} castShadow>
+            <coneGeometry args={[6.2, 2.4, 4]} />
+            <meshStandardMaterial color="#ffffff" roughness={0.6} />
+          </mesh>
+        </group>
+      ))}
+    </group>
+  );
+}
+
+const PARKED_COLORS = ["#e9ecef", "#1d1f24", "#9aa3ad", "#c8322b", "#2f6fd6", "#f4f4f4", "#5b6770", "#8a1d1d"];
+
+/** Rows of parked cars: body + cabin boxes, instanced. */
+export function CarPark({ layout }: { layout: Layout }) {
+  const body = useRef<THREE.InstancedMesh>(null);
+  const cabin = useRef<THREE.InstancedMesh>(null);
+  useLayoutEffect(() => {
+    const b = body.current;
+    const c = cabin.current;
+    if (!b || !c) return;
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const up = new THREE.Vector3(0, 1, 0);
+    const color = new THREE.Color();
+    layout.parked.forEach((p, i) => {
+      q.setFromAxisAngle(up, p.rot);
+      m.compose(new THREE.Vector3(p.x, 0.55, p.z), q, new THREE.Vector3(1.8, 0.8, 4.2));
+      b.setMatrixAt(i, m);
+      b.setColorAt(i, color.set(PARKED_COLORS[(p.y ?? 0) % PARKED_COLORS.length]));
+      m.compose(new THREE.Vector3(p.x, 1.2, p.z), q, new THREE.Vector3(1.6, 0.55, 2.2));
+      c.setMatrixAt(i, m);
+    });
+    for (const mesh of [b, c]) {
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      mesh.computeBoundingSphere();
+    }
+  }, [layout]);
+  if (layout.parked.length === 0) return null;
+  return (
+    <group>
+      <instancedMesh ref={body} args={[undefined, undefined, layout.parked.length]} castShadow receiveShadow>
+        <boxGeometry />
+        <meshStandardMaterial metalness={0.5} roughness={0.35} />
+      </instancedMesh>
+      <instancedMesh ref={cabin} args={[undefined, undefined, layout.parked.length]} castShadow>
+        <boxGeometry />
+        <meshStandardMaterial color="#222a33" metalness={0.8} roughness={0.15} />
+      </instancedMesh>
+    </group>
+  );
+}

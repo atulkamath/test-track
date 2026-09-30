@@ -14,6 +14,8 @@ export type BoxKind =
   | "fence"
   | "asphalt"
   | "seat"
+  | "berm"
+  | "marshal"
   | `ad${number}`;
 
 /** An axis-aligned box in a frame rotated to follow the track. sx = across track, sz = along track. */
@@ -26,6 +28,8 @@ export interface Box {
   sy: number;
   sz: number;
   kind: BoxKind;
+  /** Roll about the along-track axis (for sloped grass banks). */
+  tilt?: number;
 }
 
 export interface Spot {
@@ -51,6 +55,12 @@ export interface Person {
 export interface Layout {
   boxes: Box[];
   people: Person[];
+  /** Trackside TV camera positions (top of each camera tower). */
+  tvSpots: { x: number; y: number; z: number }[];
+  /** White hospitality marquees. */
+  tents: Spot[];
+  /** Parked cars; `y` holds a colour index. */
+  parked: Spot[];
   flags: Spot[];
   tower: Spot | null;
   wheel: Spot | null;
@@ -118,10 +128,13 @@ export function buildLayout(track: Track): Layout {
     }
     return true;
   };
-  const add = (f: Frame, off: number, y: number, sx: number, sy: number, sz: number, kind: BoxKind, along = 0) => {
+  const add = (f: Frame, off: number, y: number, sx: number, sy: number, sz: number, kind: BoxKind, along = 0, tilt = 0) => {
     const p = at(f, off, along);
-    boxes.push({ x: p.x, y, z: p.z, rot: f.rot, sx, sy, sz, kind });
+    boxes.push({ x: p.x, y, z: p.z, rot: f.rot, sx, sy, sz, kind, tilt });
   };
+  const tvSpots: Layout["tvSpots"] = [];
+  const tents: Spot[] = [];
+  const parked: Spot[] = [];
 
   /** Facing the track from side s: turn local +z toward the centreline. */
   const faceTrack = (f: Frame, s: number) => Math.atan2(s * f.tz, -s * f.tx);
@@ -212,19 +225,50 @@ export function buildLayout(track: Track): Layout {
     if (i === 6) tower = { ...at(f, pSide * (hw + KERB + 7)), rot: f.rot };
   }
 
-  // --- Corner grandstands at the two tightest corners with room. ---
-  const corners = cornerSide
-    .map((s, i) => ({ s, i }))
-    .filter(({ s, i }) => s !== 0 && Math.min(i, n - i) > 60)
-    .sort((a, b) => Math.abs(turnAt(track, b.i)) - Math.abs(turnAt(track, a.i)));
+  // --- Ferris wheel behind the main grandstand. ---
+  let wheel: Spot | null = null;
+  for (const i of [-20, -35, -5, -50, 10]) {
+    const f = frame(track, i);
+    for (const off of [75, 95, 115]) {
+      const p = at(f, gSide * (gBase + off));
+      if (clearance(track, p.x, p.z) < 50) continue;
+      if (reserved.some((r) => (r.x - p.x) ** 2 + (r.z - p.z) ** 2 < (r.r + 35) ** 2)) continue;
+      wheel = { ...p, rot: f.rot }; // face toward cars driving down the straight
+      break;
+    }
+    if (wheel) break;
+  }
+  if (wheel) reserved.push({ x: wheel.x, z: wheel.z, r: 30 });
+
+  // --- More grandstands: sharpest corners first, then straights, wherever there's room. ---
+  const candidates = cornerSide
+    .map((cs, i) => ({ cs, i, sharp: Math.abs(turnAt(track, i)) }))
+    .filter(({ i }) => i % 3 === 0 && Math.min(i, n - i) > 50)
+    .sort((a, b) => (b.cs !== 0 ? 1 : 0) - (a.cs !== 0 ? 1 : 0) || b.sharp - a.sharp);
   const used: number[] = [];
-  for (const { s, i } of corners) {
-    if (used.length >= 2 || used.some((u) => Math.abs(u - i) < 60)) continue;
-    const base = hw + KERB + GRAVEL_WIDTH + 6;
-    const idxs = [-9, -6, -3, 0, 3, 6, 9].map((d) => i + d);
-    if (!idxs.every((k) => fits(frame(track, k), s * (base - 4), s * (base + 13)))) continue;
-    idxs.forEach((k, j) => grandstand(frame(track, k), s, base, 9, segLen, j + used.length, false));
-    used.push(i);
+  let standIdx = 0;
+  for (const { cs, i } of candidates) {
+    if (used.length >= 9 || used.some((u) => Math.min(Math.abs(u - i), n - Math.abs(u - i)) < 36)) continue;
+    const onCorner = cs !== 0;
+    const sides = onCorner ? [cs] : rand() < 0.5 ? [1, -1] : [-1, 1];
+    const tiers = onCorner ? 9 : 7;
+    const half = onCorner ? 9 : 6;
+    for (const s of sides) {
+      const base = onCorner ? hw + KERB + GRAVEL_WIDTH + 6 : hw + KERB + 10;
+      const idxs: number[] = [];
+      for (let d = -half; d <= half; d += SEG) idxs.push(i + d);
+      const ok = idxs.every((k) => {
+        const f = frame(track, k);
+        const far = at(f, s * (base + tiers * 1.35 + 3));
+        return fits(f, s * (base - 4), s * (base + tiers * 1.35 + 3)) && !isReserved(far.x, far.z, 4);
+      });
+      if (!ok) continue;
+      const roofed = !onCorner && rand() < 0.6;
+      idxs.forEach((k, j) => grandstand(frame(track, k), s, base, tiers, segLen, standIdx + j, roofed));
+      standIdx += idxs.length;
+      used.push(i);
+      break;
+    }
   }
 
   // --- Catch fences behind the tyre walls (at the back of the gravel) on every corner. ---
@@ -257,32 +301,90 @@ export function buildLayout(track: Track): Layout {
       add(f, s * off, 0.55, 0.3, 1.1, segLen, `ad${wallIdx++ % 5}`);
       add(f, s * off, 2.6, 0.06, 3, segLen, "fence");
       add(f, s * off, 2.6, 0.14, 3, 0.14, "steel", segLen / 2);
-      const b = at(f, s * (off + 6));
-      if (clearance(track, b.x, b.z) < hw + 8 || isReserved(b.x, b.z, 3)) continue;
-      if (rand() < 0.55) standingCrowd(f, s, off + 1, 3.5, segLen, 6 + Math.floor(rand() * 6));
+      const b = at(f, s * (off + 11));
+      if (clearance(track, b.x, b.z) < hw + 12 || isReserved(b.x, b.z, 3)) continue;
+      if (rand() < 0.7) {
+        // Grass spectator bank rising away from the track, fans sitting and standing on the slope.
+        const BERM = 10;
+        const RISE = 2.8;
+        const slope = Math.atan2(RISE, BERM);
+        add(f, s * (off + 1.2 + BERM / 2), RISE / 2 - 0.3, BERM / Math.cos(slope), 0.6, segLen + 0.05, "berm", 0, -s * slope);
+        for (let k = 0; k < 16; k++) {
+          const d = 0.8 + rand() * (BERM - 1.2);
+          person(f, s, off + 1.2 + d, (rand() - 0.5) * segLen, (d / BERM) * RISE, rand() < 0.45);
+        }
+      } else if (rand() < 0.6) standingCrowd(f, s, off + 1, 3.5, segLen, 6 + Math.floor(rand() * 6));
       if (wallIdx % 7 === 0) {
         add(f, s * (off + 5), 7, 0.3, 14, 0.3, "steel"); // floodlight pole
         add(f, s * (off + 4.6), 14.2, 0.9, 0.6, 2.2, "roof");
       }
-      reserved.push({ ...at(f, s * (off + 3)), r: 5 });
+      reserved.push({ ...at(f, s * (off + 6)), r: 8 });
     }
   }
 
-  // --- Ferris wheel behind the main grandstand. ---
-  let wheel: Spot | null = null;
-  for (const i of [-20, -35, -5, -50, 10]) {
-    const f = frame(track, i);
-    for (const off of [75, 95, 115]) {
-      const p = at(f, gSide * (gBase + off));
-      if (clearance(track, p.x, p.z) < 50) continue;
-      if (reserved.some((r) => (r.x - p.x) ** 2 + (r.z - p.z) ** 2 < (r.r + 35) ** 2)) continue;
-      wheel = { ...p, rot: f.rot }; // face toward cars driving down the straight
+  // --- Ad bridges spanning the track on the straights. ---
+  for (const frac of [0.3, 0.55, 0.8]) {
+    for (let d = 0; d < 30; d += SEG) {
+      const i = Math.round(n * frac) + d;
+      if ([-6, -3, 0, 3, 6].some((k) => cornerSide[(i + k + n) % n] !== 0)) continue;
+      const f = frame(track, i);
+      const span = hw + KERB + 3.5;
+      const l = at(f, -span);
+      const r = at(f, span);
+      if (clearance(track, l.x, l.z) < span - 0.5 || clearance(track, r.x, r.z) < span - 0.5) continue;
+      for (const s of [1, -1]) add(f, s * span, 4.5, 1.2, 9, 1.2, "concrete");
+      add(f, 0, 7.6, span * 2 + 1.2, 2.4, 0.5, `ad${Math.round(frac * 10) % 5}`);
+      add(f, 0, 9, span * 2 + 1.2, 0.4, 1.4, "steel");
       break;
     }
-    if (wheel) break;
   }
-  if (wheel) reserved.push({ x: wheel.x, z: wheel.z, r: 30 });
-  if (tower) reserved.push({ x: tower.x, z: tower.z, r: 6 });
 
-  return { boxes, people, flags, tower, wheel, cornerSide, reserved };
+  // --- Marshal posts and TV camera towers every so often behind the barriers. ---
+  let post = 0;
+  for (let i = 20; i < n - 10; i += 21) {
+    const corner = cornerSide[i] !== 0;
+    const s = corner ? cornerSide[i] : i % 2 ? 1 : -1;
+    const f = frame(track, i);
+    // On corners: behind the tyre wall. On straights: between the run-off and the banner wall.
+    const off = corner ? hw + KERB + GRAVEL_WIDTH + 3.5 : hw + KERB + 2.9;
+    const p = at(f, s * off);
+    if (clearance(track, p.x, p.z) < off - 1) continue;
+    if (corner && isReserved(p.x, p.z, -2)) continue;
+    if (post++ % 3 === 0) {
+      // Scaffold camera tower with an operator on top.
+      for (const [dx, dz] of [[-0.9, -0.9], [0.9, -0.9], [-0.9, 0.9], [0.9, 0.9]]) add(f, s * (off + dx), 3, 0.15, 6, 0.15, "steel", dz);
+      add(f, s * off, 6.05, 2.4, 0.15, 2.4, "steel");
+      person(f, s, off, 0, 6.1, false);
+      const top = at(f, s * off);
+      tvSpots.push({ x: top.x, y: 7.6, z: top.z });
+    } else {
+      add(f, s * off, 1.2, 1.8, 2.4, 1.8, "marshal");
+      add(f, s * off, 2.5, 2.2, 0.15, 2.2, "roof");
+    }
+    reserved.push({ ...p, r: 3 });
+  }
+
+
+  // --- Hospitality marquees behind the pits, car parks beyond. ---
+  for (let i = -24; i <= 24; i += 6) {
+    const f = frame(track, i);
+    for (const [off, kind] of [
+      [hw + KERB + 32, "tent"],
+      [hw + KERB + 44, "tent"],
+      [hw + KERB + 60, "cars"],
+      [hw + KERB + 70, "cars"],
+      [hw + KERB + 80, "cars"],
+    ] as const) {
+      const p = at(f, pSide * off);
+      if (clearance(track, p.x, p.z) < off - 4 || isReserved(p.x, p.z, 4)) continue;
+      if (kind === "tent") tents.push({ ...p, rot: f.rot });
+      else for (let a = -5; a <= 5; a += 2.6) parked.push({ ...at(f, pSide * off, a), rot: f.rot + Math.PI / 2, y: Math.floor(rand() * 8) });
+    }
+  }
+  if (tower) {
+    reserved.push({ x: tower.x, z: tower.z, r: 6 });
+    tvSpots.push({ x: tower.x, y: 26, z: tower.z }); // high shot over the main straight
+  }
+
+  return { boxes, people, tvSpots, tents, parked, flags, tower, wheel, cornerSide, reserved };
 }
