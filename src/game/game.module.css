@@ -1,0 +1,165 @@
+.root {
+  position: fixed;
+  inset: 0;
+}
+
+.hud {
+  position: absolute;
+  top: 16px;
+  left: 20px;
+  pointer-events: none;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+
+.seed {
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+.time {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 44px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.best {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 15px;
+  opacity: 0.9;
+}
+
+.speed {
+  position: absolute;
+  right: 20px;
+  top: 16px;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 15px;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+
+.speed span {
+  font-size: 32px;
+  font-weight: 700;
+}
+
+.offRoad {
+  position: absolute;
+  top: 22%;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(214, 58, 47, 0.85);
+  font-size: 14px;
+  font-weight: 600;
+  opacity: 0;
+  transition: opacity 0.15s;
+  pointer-events: none;
+}
+
+.hint {
+  position: absolute;
+  bottom: 18%;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 10px 18px;
+  border-radius: 10px;
+  background: rgba(10, 15, 25, 0.6);
+  font-size: 16px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.panel {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  min-width: 280px;
+  padding: 24px 28px;
+  border-radius: 16px;
+  background: rgba(10, 15, 25, 0.78);
+  backdrop-filter: blur(8px);
+  text-align: center;
+}
+
+.panelLabel {
+  font-size: 13px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+.panelTime {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 52px;
+  font-weight: 700;
+}
+
+.panelTicks {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  opacity: 0.7;
+  margin-bottom: 18px;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.actions button {
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 10px;
+  background: #fff;
+  color: #111;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.actions button:last-child {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+
+.touch {
+  display: none;
+}
+
+@media (pointer: coarse) {
+  .touch {
+    position: absolute;
+    left: 16px;
+    right: 16px;
+    bottom: 20px;
+    display: flex;
+    justify-content: space-between;
+  }
+}
+
+.touchGroup {
+  display: flex;
+  gap: 12px;
+}
+
+.touchBtn {
+  width: 72px;
+  height: 72px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+  font-size: 26px;
+  touch-action: none;
+}
+
+.touchBtn:active {
+  background: rgba(255, 255, 255, 0.4);
+}
