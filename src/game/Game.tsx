@@ -334,7 +334,7 @@ export default function Game() {
   return (
     <div className={styles.root}>
       <Canvas
-        shadows
+        shadows="percentage"
         dpr={[1, 2]}
         gl={{ antialias: false, powerPreference: "high-performance" }}
         camera={{ fov: 58, near: 0.1, far: 3200 }}
