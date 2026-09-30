@@ -2,6 +2,7 @@
 
 import { forwardRef, useMemo } from "react";
 import * as THREE from "three";
+import { hashString, mulberry32 } from "@/sim/rng";
 import type { Track } from "@/sim";
 
 const KERB_WIDTH = 1.2;
@@ -190,3 +191,44 @@ export const CarModel = forwardRef<THREE.Group>(function CarModel(_, ref) {
     </group>
   );
 });
+
+/** Scenery only (not part of the sim): trees scattered off the road, seeded so the layout is stable per track. */
+export function Trees({ track }: { track: Track }) {
+  const { trunks, crowns } = useMemo(() => {
+    const rand = mulberry32(hashString(track.seed + ":trees"));
+    const clear = track.halfWidth + 9;
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const trunkMats: THREE.Matrix4[] = [];
+    const crownMats: THREE.Matrix4[] = [];
+    for (let tries = 0; tries < 2000 && trunkMats.length < 320; tries++) {
+      const x = (rand() - 0.5) * 900;
+      const z = (rand() - 0.5) * 900;
+      if (track.points.some((p) => (p.x - x) ** 2 + (p.z - z) ** 2 < clear * clear)) continue;
+      const s = 0.7 + rand() * 0.9;
+      trunkMats.push(m.compose(new THREE.Vector3(x, 1.2 * s, z), q, new THREE.Vector3(s, s, s)).clone());
+      crownMats.push(m.compose(new THREE.Vector3(x, 4.2 * s, z), q, new THREE.Vector3(s, s, s)).clone());
+    }
+    return { trunks: trunkMats, crowns: crownMats };
+  }, [track]);
+
+  const setMatrices = (mats: THREE.Matrix4[]) => (mesh: THREE.InstancedMesh | null) => {
+    if (!mesh) return;
+    mats.forEach((mat, i) => mesh.setMatrixAt(i, mat));
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.computeBoundingSphere();
+  };
+
+  return (
+    <group>
+      <instancedMesh ref={setMatrices(trunks)} args={[undefined, undefined, trunks.length]} castShadow>
+        <cylinderGeometry args={[0.25, 0.35, 2.4, 6]} />
+        <meshStandardMaterial color="#6b4a2b" />
+      </instancedMesh>
+      <instancedMesh ref={setMatrices(crowns)} args={[undefined, undefined, crowns.length]} castShadow>
+        <coneGeometry args={[1.8, 5, 7]} />
+        <meshStandardMaterial color="#2f6b3a" flatShading />
+      </instancedMesh>
+    </group>
+  );
+}

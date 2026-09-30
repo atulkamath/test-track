@@ -1,36 +1,24 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Daily Lap
 
-## Getting Started
+Daily 3D time-trial racer whose lap times are verifiable by replaying inputs on a server.
 
-First, run the development server:
-
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+```sh
+pnpm install
+pnpm dev                 # play at http://localhost:3000 (?seed=anything to change track)
+pnpm test                # determinism, golden, purity, lap tests
+pnpm replay run.json     # headless replay; prints lap ticks, exits 1 on mismatch
+pnpm tsx scripts/make-fixture.ts [seed] [out]   # autopilot lap -> run.json
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Controls: arrows / WASD, R to restart. Touch buttons on phones.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Layout
+- `src/sim/` — pure, deterministic sim (no React/Three/DOM). Reuse this on the server.
+  - 60 ticks/s, integer ticks, one input bitmask per tick (`UP=1 DOWN=2 LEFT=4 RIGHT=8`).
+  - No `Math.sin/cos` anywhere, including track gen: `trig.ts` builds sin/cos from `+ - * /`.
+  - Lap = cross gates 1..7 in order, then the finish gate. Timer starts on the first key press.
+- `src/game/` — R3F renderer + browser tick loop (`engine.ts`). Reads sim state only.
+- `test/golden` values in `sim.test.ts`: if they change, every stored run is invalidated.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Server note
+Trust only `replay(run).lapTicks`; ignore the client's `lapTicks`. `replay` rejects runs over 10 minutes.

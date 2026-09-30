@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { DOWN, LEFT, RIGHT, UP, generateTrack, type Track } from "@/sim";
 import { Engine, formatTicks } from "./engine";
-import { CarModel, Cones, FinishLine, Ground, Road } from "./Scene";
+import { CarModel, Cones, FinishLine, Ground, Road, Trees } from "./Scene";
 import styles from "./game.module.css";
 
 const KEY_BITS: Record<string, number> = {
@@ -46,6 +46,7 @@ function Driver({
   const desired = useMemo(() => new THREE.Vector3(), []);
   const lookAt = useMemo(() => new THREE.Vector3(), []);
   const snapped = useRef(false);
+  const sun = useRef<THREE.DirectionalLight>(null);
 
   useFrame((_, delta) => {
     if (started.current) engine.advance(delta, () => input.current);
@@ -53,6 +54,12 @@ function Driver({
     const p = engine.pose();
     car.current?.position.set(p.x, 0, p.z);
     car.current?.rotation.set(0, p.angle, 0);
+    // Keep the shadow camera centred on the car so a small shadow map stays sharp.
+    if (sun.current) {
+      sun.current.position.set(p.x + 60, 90, p.z + 40);
+      sun.current.target.position.set(p.x, 0, p.z);
+      sun.current.target.updateMatrixWorld();
+    }
 
     const fx = Math.sin(p.angle);
     const fz = Math.cos(p.angle);
@@ -69,21 +76,36 @@ function Driver({
     camera.lookAt(lookAt);
   });
 
-  return <CarModel ref={car} />;
+  return (
+    <>
+      <directionalLight
+        ref={sun}
+        intensity={1.8}
+        castShadow
+        shadow-mapSize={[2048, 2048]}
+        shadow-camera-left={-60}
+        shadow-camera-right={60}
+        shadow-camera-top={60}
+        shadow-camera-bottom={-60}
+        shadow-camera-far={300}
+        shadow-bias={-0.0005}
+      />
+      <CarModel ref={car} />
+    </>
+  );
 }
 
 function World({ track }: { track: Track }) {
-  const start = track.points[0];
   return (
     <>
       <Sky sunPosition={[200, 120, 100]} turbidity={4} rayleigh={0.6} />
       <fog attach="fog" args={["#bcd6ea", 150, 600]} />
       <hemisphereLight args={["#dfefff", "#4b6b3a", 0.9]} />
-      <directionalLight position={[start.x + 120, 180, start.z + 80]} intensity={1.8} />
       <Ground />
       <Road track={track} />
       <FinishLine track={track} />
       <Cones track={track} />
+      <Trees track={track} />
     </>
   );
 }
@@ -163,7 +185,7 @@ export default function Game() {
 
   return (
     <div className={styles.root}>
-      <Canvas camera={{ fov: 60, near: 0.1, far: 2000 }} dpr={[1, 2]}>
+      <Canvas shadows camera={{ fov: 60, near: 0.1, far: 2000 }} dpr={[1, 2]}>
         <World track={track} />
         <Driver engine={engine} input={input} started={startedRef} onTick={onTick} />
       </Canvas>
