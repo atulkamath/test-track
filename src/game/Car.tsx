@@ -110,7 +110,8 @@ export function animateCar(group: THREE.Group, anim: CarAnim, speed: number, ang
     body.rotation.z = anim.roll;
   }
 
-  const brake = group.children[0]?.userData.brake as THREE.MeshStandardMaterial | undefined;
+  let brake: THREE.MeshStandardMaterial | undefined;
+  group.traverse((o) => (brake ??= o.userData.brake as THREE.MeshStandardMaterial | undefined));
   if (brake) brake.emissiveIntensity = braking ? 3.5 : 0.15;
 }
 

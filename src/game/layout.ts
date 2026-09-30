@@ -61,6 +61,12 @@ export interface Layout {
   tents: Spot[];
   /** Parked cars; `y` holds a colour index. */
   parked: Spot[];
+  /** Team transporters in the paddock; `y` holds a colour index. */
+  trucks: Spot[];
+  /** Infield lake, if there's room. */
+  lake: { x: number; z: number; r: number } | null;
+  /** Big video screen on the pit roof, facing the main grandstand. */
+  screen: Spot | null;
   flags: Spot[];
   tower: Spot | null;
   wheel: Spot | null;
@@ -135,6 +141,7 @@ export function buildLayout(track: Track): Layout {
   const tvSpots: Layout["tvSpots"] = [];
   const tents: Spot[] = [];
   const parked: Spot[] = [];
+  const trucks: Spot[] = [];
 
   /** Facing the track from side s: turn local +z toward the centreline. */
   const faceTrack = (f: Frame, s: number) => Math.atan2(s * f.tz, -s * f.tx);
@@ -313,6 +320,7 @@ export function buildLayout(track: Track): Layout {
           const d = 0.8 + rand() * (BERM - 1.2);
           person(f, s, off + 1.2 + d, (rand() - 0.5) * segLen, (d / BERM) * RISE, rand() < 0.45);
         }
+        if (rand() < 0.35) flags.push({ ...at(f, s * (off + 1.2 + BERM * 0.6), (rand() - 0.5) * segLen), rot: f.rot, y: RISE * 0.6 });
       } else if (rand() < 0.6) standingCrowd(f, s, off + 1, 3.5, segLen, 6 + Math.floor(rand() * 6));
       if (wallIdx % 7 === 0) {
         add(f, s * (off + 5), 7, 0.3, 14, 0.3, "steel"); // floodlight pole
@@ -386,5 +394,69 @@ export function buildLayout(track: Track): Layout {
     tvSpots.push({ x: tower.x, y: 26, z: tower.z }); // high shot over the main straight
   }
 
-  return { boxes, people, tvSpots, tents, parked, flags, tower, wheel, cornerSide, reserved };
+  // --- Team transporters parked in the paddock behind the garages. ---
+  let screen: Spot | null = null;
+  for (let i = -27; i <= 27; i += 7) {
+    const f = frame(track, i);
+    const p = at(f, pSide * (hw + KERB + 27));
+    if (clearance(track, p.x, p.z) < hw + KERB + 23 || isReserved(p.x, p.z, -6)) continue;
+    trucks.push({ ...p, rot: f.rot, y: Math.floor(rand() * 6) });
+    if (!screen && i >= -6) screen = { ...at(f, pSide * (hw + KERB + 17)), rot: f.rot, y: 13 };
+  }
+
+  // --- A lake in the infield, wherever there's the most open space. ---
+  let lake: Layout["lake"] = null;
+  {
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (const p of track.points) {
+      minX = Math.min(minX, p.x);
+      maxX = Math.max(maxX, p.x);
+      minZ = Math.min(minZ, p.z);
+      maxZ = Math.max(maxZ, p.z);
+    }
+    let best = { x: 0, z: 0, c: 0 };
+    for (let gx = minX; gx <= maxX; gx += 12)
+      for (let gz = minZ; gz <= maxZ; gz += 12) {
+        const c = clearance(track, gx, gz);
+        if (c > best.c && !isReserved(gx, gz, 10)) best = { x: gx, z: gz, c };
+      }
+    if (best.c > 50) {
+      lake = { x: best.x, z: best.z, r: Math.min(best.c - 32, 85) };
+      reserved.push({ x: lake.x, z: lake.z, r: lake.r + 6 });
+    }
+  }
+
+  // --- Sponsor covers on the tyre walls (the conveyor-belt skins real circuits use). ---
+  const tyres = track.obstacles.filter((o) => o.kind === "tyre");
+  for (let k = 0; k < tyres.length - 1; k++) {
+    const a = tyres[k];
+    const b = tyres[k + 1];
+    const dx = b.x - a.x;
+    const dz = b.z - a.z;
+    const len = Math.hypot(dx, dz);
+    if (len > 1.6) continue;
+    // Push the cover to the track-facing side of the stacks.
+    let nx = 0, nz = 0, bestSq = Infinity;
+    for (const p of track.points) {
+      const d = (p.x - a.x) ** 2 + (p.z - a.z) ** 2;
+      if (d < bestSq) {
+        bestSq = d;
+        nx = p.x - a.x;
+        nz = p.z - a.z;
+      }
+    }
+    const nl = Math.hypot(nx, nz) || 1;
+    boxes.push({
+      x: (a.x + b.x) / 2 + (nx / nl) * 0.6,
+      y: 0.55,
+      z: (a.z + b.z) / 2 + (nz / nl) * 0.6,
+      rot: Math.atan2(dx, dz),
+      sx: 0.06,
+      sy: 1.1,
+      sz: len + 0.06,
+      kind: `ad${Math.floor(k / 6) % 5}`,
+    });
+  }
+
+  return { boxes, people, tvSpots, tents, parked, trucks, lake, screen, flags, tower, wheel, cornerSide, reserved };
 }

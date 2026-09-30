@@ -2,7 +2,7 @@
 import * as THREE from "three";
 import type { Pose } from "./engine";
 
-export const VIEWS = ["Chase", "Far chase", "Roof", "Bumper", "TV"] as const;
+export const VIEWS = ["Chase", "Cockpit", "Far chase", "Roof", "Bumper", "TV"] as const;
 export type View = (typeof VIEWS)[number];
 
 interface Follow {
@@ -15,7 +15,7 @@ interface Follow {
   fov: number;
 }
 
-const FOLLOW: Record<Exclude<View, "TV">, Follow> = {
+const FOLLOW: Record<Exclude<View, "TV" | "Cockpit">, Follow> = {
   Chase: { back: 6.4, up: 2.2, ahead: 6, lookY: 1.1, stiffness: 9, fov: 62 },
   "Far chase": { back: 11, up: 4.6, ahead: 6, lookY: 1, stiffness: 6, fov: 58 },
   Roof: { back: -0.3, up: 2.05, ahead: 20, lookY: 1.4, stiffness: 60, fov: 70 },
@@ -33,7 +33,8 @@ export class CameraRig {
   /** tvSpots: trackside camera positions (x, y, z) for the TV view. */
   constructor(private tvSpots: THREE.Vector3[]) {}
 
-  update(camera: THREE.PerspectiveCamera, view: View, p: Pose, speed: number, offRoad: boolean, delta: number) {
+  /** carRoot + eye: the car's transform and the driver's eye in car-local coordinates (for the cockpit view). */
+  update(camera: THREE.PerspectiveCamera, view: View, p: Pose, speed: number, offRoad: boolean, delta: number, carRoot?: THREE.Object3D, eye?: THREE.Vector3) {
     const fx = Math.sin(p.angle);
     const fz = Math.cos(p.angle);
     const speedFrac = Math.min(Math.abs(speed) / 55, 1);
@@ -41,7 +42,14 @@ export class CameraRig {
     this.lastView = view;
     let fov: number;
 
-    if (view === "TV" && this.tvSpots.length > 0) {
+    if (view === "Cockpit" && carRoot && eye) {
+      carRoot.updateMatrixWorld();
+      camera.position.copy(carRoot.localToWorld(this.desired.copy(eye)));
+      // Tiny engine/road vibration that grows with speed.
+      camera.position.y += (Math.random() - 0.5) * (0.002 + speedFrac * 0.006 + (offRoad ? 0.02 : 0));
+      camera.lookAt(carRoot.localToWorld(this.target.set(eye.x, eye.y - 0.12, eye.z + 12)));
+      fov = 72 + speedFrac * 6;
+    } else if (view === "TV" && this.tvSpots.length > 0) {
       // Pick the nearest trackside camera, switching only when another is clearly closer (like a TV director).
       let best = 0;
       let bestD = Infinity;
@@ -64,7 +72,7 @@ export class CameraRig {
       const dist = camera.position.distanceTo(this.look);
       fov = THREE.MathUtils.clamp(THREE.MathUtils.radToDeg(2 * Math.atan(9 / dist)), 6, 55);
     } else {
-      const f = FOLLOW[view === "TV" ? "Chase" : view];
+      const f = FOLLOW[view === "TV" || view === "Cockpit" ? "Chase" : view];
       this.desired.set(p.x - fx * f.back, f.up, p.z - fz * f.back);
       this.target.set(p.x + fx * f.ahead, f.lookY, p.z + fz * f.ahead);
       if (!this.snapped || changed) {

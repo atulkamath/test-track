@@ -9,6 +9,7 @@ export interface SoundFrame {
   slip: number;
   /** 0..1 how many fans are close by and how excited they are. */
   crowd: number;
+  braking: boolean;
 }
 
 function noiseBuffer(ctx: AudioContext) {
@@ -30,6 +31,10 @@ export class Sound {
   private windGain!: GainNode;
   private crowdGain!: GainNode;
   private crowdFilter!: BiquadFilterNode;
+  private shiftGain!: GainNode;
+  private brakeGain!: GainNode;
+  private brakeOsc!: OscillatorNode;
+  private noise!: AudioBufferSourceNode;
   muted = false;
 
   /** Call from a user gesture (key press / tap). Safe to call repeatedly. */
@@ -73,13 +78,39 @@ export class Sound {
       this.engineOsc.push(o);
       this.engineMult.push(mult);
     }
-    mix.connect(shaper).connect(this.engineFilter).connect(this.engineGain).connect(this.master);
+    // shiftGain is only touched by shift(), so per-frame updates never cancel the gear-change dip.
+    this.shiftGain = ctx.createGain();
+    mix.connect(shaper).connect(this.engineFilter).connect(this.engineGain).connect(this.shiftGain).connect(this.master);
 
     // Shared noise source for tyres, wind and crowd.
     const noise = ctx.createBufferSource();
     noise.buffer = noiseBuffer(ctx);
     noise.loop = true;
     noise.start();
+    this.noise = noise;
+
+    // Brake screech: a warbling high tone over narrow-band noise.
+    this.brakeGain = ctx.createGain();
+    this.brakeGain.gain.value = 0;
+    this.brakeGain.connect(this.master);
+    this.brakeOsc = ctx.createOscillator();
+    this.brakeOsc.type = "triangle";
+    this.brakeOsc.frequency.value = 2900;
+    const vibrato = ctx.createOscillator();
+    vibrato.frequency.value = 23;
+    const vibratoDepth = ctx.createGain();
+    vibratoDepth.gain.value = 120;
+    vibrato.connect(vibratoDepth).connect(this.brakeOsc.frequency);
+    vibrato.start();
+    const toneLevel = ctx.createGain();
+    toneLevel.gain.value = 0.35;
+    this.brakeOsc.connect(toneLevel).connect(this.brakeGain);
+    this.brakeOsc.start();
+    const brakeNoise = ctx.createBiquadFilter();
+    brakeNoise.type = "bandpass";
+    brakeNoise.frequency.value = 3200;
+    brakeNoise.Q.value = 12;
+    noise.connect(brakeNoise).connect(this.brakeGain);
 
     const tyreFilter = ctx.createBiquadFilter();
     tyreFilter.type = "bandpass";
@@ -123,8 +154,34 @@ export class Sound {
     this.tyreGain.gain.setTargetAtTime(slip * 0.18, t, 0.05);
     const s = Math.min(Math.abs(f.speed) / 55, 1);
     this.windGain.gain.setTargetAtTime(s * s * 0.12, t, 0.1);
+    // Screech when the brakes bite at speed; pitch drops as the car slows.
+    const screech = f.braking ? Math.min(Math.max((Math.abs(f.speed) - 12) / 25, 0), 1) : 0;
+    this.brakeGain.gain.setTargetAtTime(screech * 0.09, t, screech > 0 ? 0.04 : 0.08);
+    this.brakeOsc.frequency.setTargetAtTime(2300 + Math.abs(f.speed) * 18, t, 0.1);
     this.crowdGain.gain.setTargetAtTime(0.015 + f.crowd * 0.2, t, 0.3);
     this.crowdFilter.frequency.setTargetAtTime(500 + f.crowd * 500, t, 0.3);
+  }
+
+  /** Gear change: the engine note cuts briefly and the gearbox clunks. */
+  shift() {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const g = this.shiftGain.gain;
+    g.cancelScheduledValues(t);
+    g.setValueAtTime(1, t);
+    g.linearRampToValueAtTime(0.2, t + 0.04);
+    g.linearRampToValueAtTime(0.2, t + 0.1);
+    g.linearRampToValueAtTime(1, t + 0.2);
+    // Clunk: a short burst of low-passed noise.
+    const clunk = ctx.createGain();
+    clunk.gain.setValueAtTime(0.25, t);
+    clunk.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.value = 700;
+    this.noise.connect(lp).connect(clunk).connect(this.master);
+    setTimeout(() => lp.disconnect(), 150);
   }
 
   dispose() {

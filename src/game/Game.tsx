@@ -9,8 +9,10 @@ import { COS, DOWN, LEFT, RIGHT, SIN, UP, generateTrack, type Track } from "@/si
 import { Sound } from "./audio";
 import { CameraRig, VIEWS } from "./camera";
 import { animateCar, Car, newCarAnim, PLAYER_MODEL } from "./Car";
+import { Cockpit, EYE, type CockpitHandle } from "./Cockpit";
 import { gearbox } from "./gearbox";
 import { Crowd } from "./Crowd";
+import { BigScreen, Blimp, Clouds, Helicopter, Lake, Paddock } from "./Life";
 import { Obstacles, SkidMarks, Traffic, type SkidHandle } from "./Dynamic";
 import { Engine, formatTicks } from "./engine";
 import { FinishLine, GatePosts, Ground, Road, RunOff, Trees } from "./Scene";
@@ -66,6 +68,9 @@ function Driver({
   const anim = useMemo(() => newCarAnim(), []);
   const rig = useMemo(() => new CameraRig(layout.tvSpots.map((s) => new THREE.Vector3(s.x, s.y, s.z))), [layout]);
   const crowdNear = useRef({ level: 0, frame: 0 });
+  const cockpit = useRef<CockpitHandle>(null);
+  const cockpitGroup = useRef<THREE.Group>(null);
+  const lastGear = useRef(0);
 
   useFrame(({ camera }, delta) => {
     if (started.current) engine.advance(delta, () => input.current);
@@ -87,9 +92,18 @@ function Driver({
     }
 
     const sim = engine.sim.state.car;
-    rig.update(camera as THREE.PerspectiveCamera, VIEWS[view.current], p, speed, sim.offRoad, delta);
-    // Hide the player's car when the camera is inside it.
-    if (car.current) car.current.visible = VIEWS[view.current] !== "Bumper";
+    const viewName = VIEWS[view.current];
+    rig.update(camera as THREE.PerspectiveCamera, viewName, p, speed, sim.offRoad, delta, car.current ?? undefined, EYE);
+    // Hide the player's car when the camera is in front of it; show the interior only from the driver's seat.
+    if (car.current) car.current.visible = viewName !== "Bumper";
+    if (cockpitGroup.current) cockpitGroup.current.visible = viewName === "Cockpit";
+
+    // Gears: the cockpit hand reaches for the lever and the engine note cuts on every change.
+    const box = gearbox(speed);
+    const gear = started.current ? box.gear : 0;
+    if (gear !== lastGear.current && lastGear.current !== 0 && gear !== 0) sound.current?.shift();
+    lastGear.current = gear;
+    if (viewName === "Cockpit") cockpit.current?.update({ steer, gear, speedKmh: Math.abs(speed) * 3.6, rpm: started.current ? box.rpm : 900, delta });
 
     // Sound: engine from the cosmetic gearbox, tyres from sideways slip, crowd from nearby fans.
     const cn = crowdNear.current;
@@ -105,6 +119,7 @@ function Driver({
       speed,
       slip: sim.offRoad ? 0 : slip,
       crowd: cn.level,
+      braking,
     });
   });
 
@@ -124,9 +139,14 @@ function Driver({
         shadow-camera-far={400}
         shadow-bias={-0.0005}
       />
-      <Suspense fallback={null}>
-        <Car ref={car} model={PLAYER_MODEL} />
-      </Suspense>
+      <group ref={car}>
+        <Suspense fallback={null}>
+          <Car model={PLAYER_MODEL} />
+        </Suspense>
+        <group ref={cockpitGroup} visible={false}>
+          <Cockpit ref={cockpit} />
+        </group>
+      </group>
     </>
   );
 }
@@ -164,6 +184,10 @@ function World({ track, layout }: { track: Track; layout: Layout }) {
       <GatePosts track={track} />
       <Tents layout={layout} />
       <CarPark layout={layout} />
+      <Paddock layout={layout} />
+      <Lake layout={layout} />
+      <Clouds track={track} />
+      <Blimp track={track} />
       <Trees track={track} reserved={layout.reserved} />
     </>
   );
@@ -297,6 +321,8 @@ export default function Game() {
         <Obstacles engine={engine} />
         <SkidMarks ref={skids} />
         <Crowd people={layout.people} engine={engine} />
+        <Helicopter engine={engine} />
+        <BigScreen layout={layout} engine={engine} />
         <Effects />
       </Canvas>
 
