@@ -11,6 +11,10 @@ export interface Obstacle {
 const KERB = 1.2;
 const CONE_R = 0.35;
 const TYRE_R = 0.55;
+/** Gravel run-off width on the outside of corners; the tyre wall sits at its far edge. */
+export const GRAVEL_WIDTH = 12;
+/** Max centre-to-centre gap between tyre stacks: smaller than a car (1.9 m) so nothing slips through. */
+const TYRE_GAP = 1.2;
 
 /** Per sample: +1 / -1 = outside of a corner is on the right / left, 0 = not a corner. */
 export function cornerSides(track: Track): number[] {
@@ -46,14 +50,29 @@ export function generateObstacles(track: Track): Obstacle[] {
     out.push({ ...side(i, s * (hw + KERB + 1.5)), r: CONE_R, kind: "cone" });
   }
 
-  // A continuous tyre wall on the outside of every corner (2 m spacing leaves no car-sized gaps).
+  // A continuous tyre wall at the back of the gravel on the outside of every corner.
+  // Samples are 2 m apart on the centreline but further apart out here, so fill any gaps.
   const corners = cornerSides(track);
   const minSq = (hw + 4) * (hw + 4);
+  let prev: { x: number; z: number } | null = null;
   for (let i = 0; i < n; i++) {
-    if (corners[i] === 0) continue;
-    const p = side(i, corners[i] * (hw + KERB + 5));
-    if (nearestSq(track, p.x, p.z) < minSq) continue;
+    const p = corners[i] === 0 ? null : side(i, corners[i] * (hw + KERB + GRAVEL_WIDTH + 0.6));
+    if (!p || nearestSq(track, p.x, p.z) < minSq) {
+      prev = null;
+      continue;
+    }
+    if (prev) {
+      const dx = p.x - prev.x;
+      const dz = p.z - prev.z;
+      const gap = Math.sqrt(dx * dx + dz * dz);
+      const extra = Math.ceil(gap / TYRE_GAP) - 1;
+      for (let k = 1; k <= extra && gap < 10; k++) {
+        const u = k / (extra + 1);
+        out.push({ x: prev.x + dx * u, z: prev.z + dz * u, r: TYRE_R, kind: "tyre" });
+      }
+    }
     out.push({ ...p, r: TYRE_R, kind: "tyre" });
+    prev = p;
   }
   return out;
 }

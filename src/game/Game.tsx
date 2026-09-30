@@ -10,11 +10,12 @@ import { animateCar, Car, newCarAnim, PLAYER_MODEL } from "./Car";
 import { Crowd } from "./Crowd";
 import { Obstacles, SkidMarks, Traffic, type SkidHandle } from "./Dynamic";
 import { Engine, formatTicks } from "./engine";
-import { FinishLine, GatePosts, Ground, Road, Trees } from "./Scene";
+import { FinishLine, GatePosts, Ground, Road, RunOff, Trees } from "./Scene";
 import { Tacho, type TachoHandle } from "./Tacho";
-import { CircuitBoxes, FerrisWheel, Flags, GravelTraps, Hills, TimingTower } from "./Circuit";
+import { Pylons, Ridges, Town } from "./Background";
+import { CircuitBoxes, FerrisWheel, Flags, GravelTraps, TimingTower } from "./Circuit";
 import { buildLayout, type Layout } from "./layout";
-import { Billboards, Mountains } from "./Trackside";
+import { Billboards } from "./Trackside";
 import styles from "./game.module.css";
 
 
@@ -107,8 +108,8 @@ function Driver({
     <>
       <directionalLight
         ref={sun}
-        intensity={2.4}
-        color="#ffe2bd"
+        intensity={2.8}
+        color="#fff4e4"
         castShadow
         shadow-mapSize={[4096, 4096]}
         shadow-camera-left={-80}
@@ -126,26 +127,28 @@ function Driver({
   );
 }
 
-/** Late-afternoon sun: low, warm, long shadows. Used for both the sky shader and the shadow-casting light. */
-const SUN_DIR = new THREE.Vector3(420, 95, 210).normalize();
+/** Clear early-afternoon sun. Used for both the sky shader and the shadow-casting light. */
+const SUN_DIR = new THREE.Vector3(300, 240, 140).normalize();
 
 function World({ track, layout }: { track: Track; layout: Layout }) {
   return (
     <>
-      <color attach="background" args={["#c9d6df"]} />
-      <Sky sunPosition={SUN_DIR.clone().multiplyScalar(1000).toArray()} turbidity={5} rayleigh={0.9} mieCoefficient={0.006} mieDirectionalG={0.85} />
-      <fog attach="fog" args={["#d4dadb", 260, 1500]} />
-      <hemisphereLight args={["#e4ecf5", "#56693a", 0.7]} />
+      <color attach="background" args={["#b9d3ea"]} />
+      <Sky sunPosition={SUN_DIR.clone().multiplyScalar(1000).toArray()} turbidity={2.2} rayleigh={0.7} mieCoefficient={0.004} mieDirectionalG={0.8} />
+      <fog attach="fog" args={["#c6d8e8", 420, 2900]} />
+      <hemisphereLight args={["#e2edfa", "#5d7a3e", 0.8]} />
       {/* Local reflection map (no network): bright sky above, a warm strip toward the sun, a few highlights. */}
       <Environment resolution={256} environmentIntensity={0.6}>
         <Lightformer form="rect" intensity={2} color="#d6e6f7" position={[0, 12, 0]} rotation-x={Math.PI / 2} scale={[40, 40, 1]} />
-        <Lightformer form="rect" intensity={5} color="#ffd9a8" position={SUN_DIR.clone().multiplyScalar(15).toArray()} scale={[14, 3, 1]} target={[0, 0, 0]} />
+        <Lightformer form="rect" intensity={5} color="#fff1dc" position={SUN_DIR.clone().multiplyScalar(15).toArray()} scale={[14, 3, 1]} target={[0, 0, 0]} />
         <Lightformer form="rect" intensity={3} position={[-8, 5, -6]} rotation-y={Math.PI / 3} scale={[12, 1.2, 1]} />
         <Lightformer form="rect" intensity={1} color="#4f7a3a" position={[0, -6, 0]} rotation-x={-Math.PI / 2} scale={[40, 40, 1]} />
       </Environment>
       <Ground />
-      <Mountains track={track} />
-      <Hills track={track} />
+      <Ridges track={track} />
+      <Town track={track} />
+      <Pylons track={track} />
+      <RunOff track={track} />
       <Road track={track} />
       <GravelTraps track={track} layout={layout} />
       <FinishLine track={track} />
@@ -255,7 +258,7 @@ export default function Game() {
         shadows="soft"
         dpr={[1, 2]}
         gl={{ antialias: false, powerPreference: "high-performance" }}
-        camera={{ fov: 58, near: 0.1, far: 2600 }}
+        camera={{ fov: 58, near: 0.1, far: 3200 }}
       >
         <World track={track} layout={layout} />
         <Driver engine={engine} input={input} started={startedRef} onTick={onTick} skids={skids} />

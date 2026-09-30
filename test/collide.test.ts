@@ -11,6 +11,16 @@ describe("collisions", () => {
     expect(obstacles.some((o) => o.kind === "tyre")).toBe(true);
   });
 
+  it("tyre walls have no car-sized gaps", () => {
+    for (const seed of ["2026-10-01", "2026-10-02", "2026-10-03"]) {
+      const tyres = createSim(seed).track.obstacles.filter((o) => o.kind === "tyre");
+      for (const t of tyres) {
+        const nearest = Math.min(...tyres.filter((u) => u !== t).map((u) => Math.hypot(u.x - t.x, u.z - t.z)));
+        expect(nearest).toBeLessThan(1.9); // car collision circle diameter
+      }
+    }
+  });
+
   it("driving into a tyre stack stops the car going through it", () => {
     const sim = createSim("2026-10-01");
     const tyre = sim.track.obstacles.find((o) => o.kind === "tyre")!;

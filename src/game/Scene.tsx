@@ -192,8 +192,48 @@ export function GatePosts({ track }: { track: Track }) {
   );
 }
 
+/** Mowed-stripe grass: broad alternating light/dark bands with soft variation, like a circuit's infield. */
+function mowedGrassTexture() {
+  const S = 512;
+  const c = document.createElement("canvas");
+  c.width = c.height = S;
+  const ctx = c.getContext("2d")!;
+  const rand = mulberry32(31);
+  const bands = 8;
+  for (let b = 0; b < bands; b++) {
+    ctx.fillStyle = b % 2 ? "#5d9a3a" : "#4f8a31";
+    ctx.fillRect((b * S) / bands, 0, S / bands, S);
+  }
+  // Soft blotches and fine grain so the stripes don't look painted on.
+  for (let k = 0; k < 160; k++) {
+    const x = rand() * S;
+    const y = rand() * S;
+    const r = 20 + rand() * 80;
+    for (const dx of [-S, 0, S])
+      for (const dy of [-S, 0, S]) {
+        const g = ctx.createRadialGradient(x + dx, y + dy, 0, x + dx, y + dy, r);
+        g.addColorStop(0, rand() < 0.5 ? "rgba(40,70,25,0.12)" : "rgba(140,170,80,0.10)");
+        g.addColorStop(1, "transparent");
+        ctx.fillStyle = g;
+        ctx.fillRect(x + dx - r, y + dy - r, r * 2, r * 2);
+      }
+  }
+  for (let k = 0; k < 9000; k++) {
+    ctx.fillStyle = rand() < 0.5 ? "rgba(0,0,0,0.06)" : "rgba(255,255,255,0.05)";
+    ctx.fillRect(rand() * S, rand() * S, 1, 1);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(60, 60); // ~6 m wide stripes
+  t.center.set(0.5, 0.5);
+  t.rotation = 0.6;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 16;
+  return t;
+}
+
 export function Ground() {
-  const grass = useMemo(() => surfaceTexture("#5b8f40", ["#4d7f36", "#6a9f4b", "#57883c", "#739f4f"], 23, 80, 0.04), []);
+  const grass = useMemo(() => mowedGrassTexture(), []);
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
       <planeGeometry args={[3000, 3000]} />
@@ -202,44 +242,79 @@ export function Ground() {
   );
 }
 
+/** Green-painted asphalt run-off just beyond the kerbs (gravel traps draw over it on corners). */
+export function RunOff({ track }: { track: Track }) {
+  const geos = useMemo(() => {
+    const hw = track.halfWidth;
+    return [stripGeometry(track, hw + KERB_WIDTH, hw + KERB_WIDTH + 1.6, 0.011), stripGeometry(track, -hw - KERB_WIDTH, -hw - KERB_WIDTH - 1.6, 0.011)];
+  }, [track]);
+  return (
+    <group>
+      {geos.map((g, i) => (
+        <mesh key={i} geometry={g} receiveShadow>
+          <meshStandardMaterial color="#2f8a5a" roughness={0.8} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
 
-/** Scenery only (not part of the sim): trees scattered off the road, seeded so the layout is stable per track. */
+/** Round broadleaf trees and a few conifers, grouped into clumps and tree lines. Scenery only. */
 export function Trees({ track, reserved }: { track: Track; reserved: { x: number; z: number; r: number }[] }) {
-  const { trunks, crowns } = useMemo(() => {
+  const { trunks, round, conifer } = useMemo(() => {
     const rand = mulberry32(hashString(track.seed + ":trees"));
-    const clear = track.halfWidth + 9;
-    const m = new THREE.Matrix4();
+    // Clear of the road, run-off, gravel and tyre walls.
+    const clear = track.halfWidth + 24;
+    const clump = (x: number, z: number) => Math.sin(x * 0.021 + 0.7) * Math.sin(z * 0.017 + 1.9) + 0.6 * Math.sin((x + z) * 0.009);
+    const trunks: THREE.Matrix4[] = [];
+    const round: { m: THREE.Matrix4; c: THREE.Color }[] = [];
+    const conifer: { m: THREE.Matrix4; c: THREE.Color }[] = [];
     const q = new THREE.Quaternion();
-    const trunkMats: THREE.Matrix4[] = [];
-    const crownMats: THREE.Matrix4[] = [];
-    for (let tries = 0; tries < 6000 && trunkMats.length < 1100; tries++) {
-      const x = (rand() - 0.5) * 1300;
-      const z = (rand() - 0.5) * 1300;
+    const greens = ["#3f7a34", "#4a8a3a", "#355f2c", "#5a8f3e", "#2f5a2a"];
+    for (let tries = 0; tries < 20000 && trunks.length < 1800; tries++) {
+      const x = (rand() - 0.5) * 1500;
+      const z = (rand() - 0.5) * 1500;
+      if (clump(x, z) < 0.35) continue;
       if (reserved.some((r) => (r.x - x) ** 2 + (r.z - z) ** 2 < r.r * r.r)) continue;
       if (track.points.some((p) => (p.x - x) ** 2 + (p.z - z) ** 2 < clear * clear)) continue;
-      const s = 0.7 + rand() * 0.9;
-      trunkMats.push(m.compose(new THREE.Vector3(x, 1.2 * s, z), q, new THREE.Vector3(s, s, s)).clone());
-      crownMats.push(m.compose(new THREE.Vector3(x, 4.2 * s, z), q, new THREE.Vector3(s, s, s)).clone());
+      const s = 0.8 + rand() * 0.8;
+      const color = new THREE.Color(greens[Math.floor(rand() * greens.length)]);
+      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand() * 6.28);
+      trunks.push(new THREE.Matrix4().compose(new THREE.Vector3(x, 1.5 * s, z), q, new THREE.Vector3(s, s, s)));
+      if (rand() < 0.75) {
+        const w = s * (0.9 + rand() * 0.4);
+        round.push({ m: new THREE.Matrix4().compose(new THREE.Vector3(x, 4.6 * s, z), q, new THREE.Vector3(w, s * (0.8 + rand() * 0.3), w)), c: color });
+      } else {
+        conifer.push({ m: new THREE.Matrix4().compose(new THREE.Vector3(x, 5 * s, z), q, new THREE.Vector3(s, s, s)), c: color });
+      }
     }
-    return { trunks: trunkMats, crowns: crownMats };
+    return { trunks, round, conifer };
   }, [track, reserved]);
 
-  const setMatrices = (mats: THREE.Matrix4[]) => (mesh: THREE.InstancedMesh | null) => {
+  const fill = (items: { m: THREE.Matrix4; c?: THREE.Color }[]) => (mesh: THREE.InstancedMesh | null) => {
     if (!mesh) return;
-    mats.forEach((mat, i) => mesh.setMatrixAt(i, mat));
+    items.forEach((it, i) => {
+      mesh.setMatrixAt(i, it.m);
+      if (it.c) mesh.setColorAt(i, it.c);
+    });
     mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     mesh.computeBoundingSphere();
   };
 
   return (
     <group>
-      <instancedMesh ref={setMatrices(trunks)} args={[undefined, undefined, trunks.length]} castShadow>
-        <cylinderGeometry args={[0.25, 0.35, 2.4, 10]} />
-        <meshStandardMaterial color="#6b4a2b" />
+      <instancedMesh ref={fill(trunks.map((m) => ({ m })))} args={[undefined, undefined, trunks.length]} castShadow>
+        <cylinderGeometry args={[0.22, 0.32, 3, 8]} />
+        <meshStandardMaterial color="#5e452e" roughness={0.95} />
       </instancedMesh>
-      <instancedMesh ref={setMatrices(crowns)} args={[undefined, undefined, crowns.length]} castShadow>
-        <coneGeometry args={[1.8, 5, 16]} />
-        <meshStandardMaterial color="#2f6b3a" roughness={0.85} />
+      <instancedMesh ref={fill(round)} args={[undefined, undefined, round.length]} castShadow receiveShadow>
+        <icosahedronGeometry args={[2.9, 1]} />
+        <meshStandardMaterial roughness={0.9} flatShading />
+      </instancedMesh>
+      <instancedMesh ref={fill(conifer)} args={[undefined, undefined, conifer.length]} castShadow receiveShadow>
+        <coneGeometry args={[2, 6.5, 12]} />
+        <meshStandardMaterial roughness={0.9} />
       </instancedMesh>
     </group>
   );

@@ -10,7 +10,7 @@ export const TICK_RATE = 60;
 /** Replays longer than this are rejected (10 minutes). */
 export const MAX_TICKS = TICK_RATE * 60 * 10;
 /** Bump whenever sim rules change: old runs can't be replayed faithfully. */
-export const RUN_VERSION = 2 as const;
+export const RUN_VERSION = 3 as const;
 const START_INDEX = 3;
 
 /** AI traffic: where each car starts (fraction of a lap ahead of the player) and how well it drives. */

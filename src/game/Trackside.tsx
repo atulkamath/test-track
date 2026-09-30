@@ -2,7 +2,6 @@
 
 // Scenery only. Nothing here affects the sim.
 import { useMemo } from "react";
-import { hashString, mulberry32 } from "@/sim/rng";
 import type { Track } from "@/sim";
 import { clearance, KERB, type Layout } from "./layout";
 import { ADS, adTexture } from "./textures";
@@ -12,28 +11,6 @@ function side(track: Track, i: number, off: number) {
   const p = track.points[i];
   const t = track.tangents[i];
   return { x: p.x - t.z * off, z: p.z + t.x * off };
-}
-
-/** Hazy low-poly mountains ringing the horizon. */
-export function Mountains({ track }: { track: Track }) {
-  const peaks = useMemo(() => {
-    const rand = mulberry32(hashString(track.seed + ":mountains"));
-    return Array.from({ length: 30 }, (_, i) => {
-      const a = (i / 30) * Math.PI * 2 + rand() * 0.15;
-      const r = 950 + rand() * 300;
-      return { x: Math.cos(a) * r, z: Math.sin(a) * r, h: 160 + rand() * 260, w: 220 + rand() * 160, rot: rand() * 6 };
-    });
-  }, [track]);
-  return (
-    <group>
-      {peaks.map((m, i) => (
-        <mesh key={i} position={[m.x, m.h / 2 - 5, m.z]} rotation={[0, m.rot, 0]}>
-          <coneGeometry args={[m.w, m.h, 6]} />
-          <meshStandardMaterial color={i % 3 ? "#6f8499" : "#7b8fa2"} flatShading roughness={1} />
-        </mesh>
-      ))}
-    </group>
-  );
 }
 
 /** Billboards angled toward oncoming cars, near each checkpoint. */

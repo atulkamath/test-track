@@ -1,5 +1,5 @@
 // Where the circuit set pieces go. Rendering only: nothing here touches the sim.
-import { cornerSides, type Track } from "@/sim";
+import { cornerSides, GRAVEL_WIDTH, type Track } from "@/sim";
 import { hashString, mulberry32 } from "@/sim/rng";
 
 export const KERB = 1.2;
@@ -32,6 +32,7 @@ export interface Spot {
   x: number;
   z: number;
   rot: number;
+  y?: number;
 }
 
 /** One spectator. Faces local +z (rot turns them toward the track). action: 0 idle, 1 clap, 2 wave, 3 cheer, 4 jump. */
@@ -144,10 +145,10 @@ export function buildLayout(track: Track): Layout {
     for (let k = 0; k < count; k++) person(f, s, off + rand() * depth, (rand() - 0.5) * len, 0, false);
   };
 
-  /** A covered grandstand segment: stepped crowd tiers, back wall, cantilever roof, banner + catch fence in front. */
+  /** A grandstand segment: stepped tiers packed with seated fans, back wall, optional roof with banner fascia. */
   const grandstand = (f: Frame, s: number, base: number, tiers: number, len: number, idx: number, roofed: boolean) => {
-    const rise = 0.75;
-    const depth = 1.6;
+    const rise = 0.85;
+    const depth = 1.35;
     add(f, s * (base - 3.5), 1.9, 0.06, 3.8, len, "fence");
     add(f, s * (base - 3.5), 1.9, 0.18, 3.8, 0.18, "steel", len / 2);
     add(f, s * (base - 0.3), 0.6, 0.3, 1.2, len, `ad${idx % 5}`);
@@ -155,15 +156,20 @@ export function buildLayout(track: Track): Layout {
       const h = (k + 1) * rise + 1.2;
       add(f, s * (base + k * depth + depth / 2), h / 2, depth, h, len, "crowd");
       // Seated spectators along the front edge of each tier (legs hang over the step).
-      for (let a = -len / 2 + 0.35; a < len / 2; a += 0.62) if (rand() < 0.88) person(f, s, base + k * depth + 0.4, a, h, true);
+      for (let a = -len / 2 + 0.35; a < len / 2; a += 0.62) if (rand() < 0.9) person(f, s, base + k * depth + 0.4, a, h, true);
     }
+    // Aisle stairs every few segments.
+    if (idx % 3 === 0)
+      for (let k = 0; k < tiers; k++) add(f, s * (base + k * depth + depth / 2), (k + 1) * rise + 1.22, depth, 0.06, 0.9, "concrete", len / 2 - 0.45);
     const back = base + tiers * depth + 0.25;
     const top = tiers * rise + 1.2;
     add(f, s * back, (top + 5) / 2, 0.5, top + 5, len, "concrete");
     if (roofed) {
-      add(f, s * (base + (tiers * depth) / 2), top + 5, tiers * depth + 3, 0.35, len + 0.1, "roof");
-      if (idx % 2 === 0) add(f, s * (back - 0.5), (top + 5) / 2, 0.35, top + 5, 0.35, "steel");
-      if (idx % 2 === 0) flags.push({ ...at(f, s * (base - 1.2), 0), rot: f.rot });
+      const roofY = top + 5;
+      add(f, s * (base + (tiers * depth) / 2), roofY, tiers * depth + 3, 0.35, len + 0.1, "roof");
+      add(f, s * (base - 1.5), roofY - 0.8, 0.3, 1.8, len + 0.1, `ad${(idx + 2) % 5}`); // banner along the roof edge
+      if (idx % 2 === 0) add(f, s * (back - 0.5), roofY / 2, 0.35, roofY, 0.35, "steel");
+      if (idx % 2 === 0) flags.push({ ...at(f, s * (base - 1.2), 0), rot: f.rot, y: roofY });
     }
     reserved.push({ ...at(f, s * (base + (tiers * depth) / 2)), r: tiers * depth + 6 });
   };
@@ -178,13 +184,15 @@ export function buildLayout(track: Track): Layout {
     for (let i = -39; i <= 12; i += SEG) if (fits(frame(track, i), s * (hw + KERB + 3), s * far)) c++;
     return c;
   };
-  const gSide = countFits(1, gBase + 16) >= countFits(-1, gBase + 16) ? 1 : -1;
+  const MAIN_TIERS = 14;
+  const gFar = gBase + MAIN_TIERS * 1.35 + 4;
+  const gSide = countFits(1, gFar) >= countFits(-1, gFar) ? 1 : -1;
   const pSide = -gSide;
 
   let seg = 0;
   for (let i = -39; i <= 12; i += SEG) {
     const f = frame(track, i);
-    if (fits(f, gSide * (hw + KERB + 3), gSide * (gBase + 16))) grandstand(f, gSide, gBase, 8, segLen, seg, true);
+    if (fits(f, gSide * (hw + KERB + 3), gSide * gFar)) grandstand(f, gSide, gBase, MAIN_TIERS, segLen, seg, true);
     seg++;
   }
 
@@ -199,6 +207,7 @@ export function buildLayout(track: Track): Layout {
     add(f, pSide * (hw + KERB + 17), 2.6, 9.4, 5.2, segLen, "concrete");
     add(f, pSide * (hw + KERB + 17.5), 6.8, 7.5, 3.2, segLen, "glass");
     add(f, pSide * (hw + KERB + 16.5), 8.6, 12, 0.4, segLen + 0.1, "roof");
+    add(f, pSide * (hw + KERB + 10.6), 8.1, 0.3, 1.4, segLen + 0.1, `ad${Math.abs(i) % 5}`); // pit roof banner
     reserved.push({ ...at(f, pSide * (hw + KERB + 16)), r: 10 });
     if (i === 6) tower = { ...at(f, pSide * (hw + KERB + 7)), rot: f.rot };
   }
@@ -211,19 +220,19 @@ export function buildLayout(track: Track): Layout {
   const used: number[] = [];
   for (const { s, i } of corners) {
     if (used.length >= 2 || used.some((u) => Math.abs(u - i) < 60)) continue;
-    const base = hw + KERB + 16;
-    const idxs = [-6, -3, 0, 3, 6].map((d) => i + d);
-    if (!idxs.every((k) => fits(frame(track, k), s * (base - 4), s * (base + 9)))) continue;
-    idxs.forEach((k, j) => grandstand(frame(track, k), s, base, 5, segLen, j + used.length, false));
+    const base = hw + KERB + GRAVEL_WIDTH + 6;
+    const idxs = [-9, -6, -3, 0, 3, 6, 9].map((d) => i + d);
+    if (!idxs.every((k) => fits(frame(track, k), s * (base - 4), s * (base + 13)))) continue;
+    idxs.forEach((k, j) => grandstand(frame(track, k), s, base, 9, segLen, j + used.length, false));
     used.push(i);
   }
 
-  // --- Catch fences behind the tyre walls on every corner. ---
+  // --- Catch fences behind the tyre walls (at the back of the gravel) on every corner. ---
   for (let i = 0; i < n; i += SEG) {
     const s = cornerSide[i];
     if (s === 0) continue;
     const f = frame(track, i);
-    const off = hw + KERB + 7;
+    const off = hw + KERB + GRAVEL_WIDTH + 1.8;
     const p = at(f, s * off);
     if (clearance(track, p.x, p.z) < hw + 5) continue;
     add(f, s * off, 1.9, 0.06, 3.8, segLen, "fence");
@@ -235,20 +244,26 @@ export function buildLayout(track: Track): Layout {
     }
   }
 
-  // --- Spectator banks along the straights: low fence, people standing behind it. ---
+  // --- Straights: continuous banner walls topped with debris fence; fans and floodlights behind. ---
+  let wallIdx = 0;
   for (let i = 0; i < n; i += SEG) {
     if (i > n - 45 || i < 36) continue; // start straight has the grandstand and pits
     if ([-3, 0, 3].some((d) => cornerSide[(i + d + n) % n] !== 0)) continue;
     const f = frame(track, i);
     for (const s of [1, -1]) {
-      if (rand() > 0.45) continue;
-      const off = hw + KERB + 6;
+      const off = hw + KERB + 4.5;
       const a = at(f, s * off);
+      if (clearance(track, a.x, a.z) < hw + 4 || isReserved(a.x, a.z, 1)) continue;
+      add(f, s * off, 0.55, 0.3, 1.1, segLen, `ad${wallIdx++ % 5}`);
+      add(f, s * off, 2.6, 0.06, 3, segLen, "fence");
+      add(f, s * off, 2.6, 0.14, 3, 0.14, "steel", segLen / 2);
       const b = at(f, s * (off + 6));
-      if (clearance(track, a.x, a.z) < hw + 4 || clearance(track, b.x, b.z) < hw + 8) continue;
-      if (isReserved(b.x, b.z, 3)) continue;
-      add(f, s * off, 0.55, 0.12, 1.1, segLen, "steel");
-      standingCrowd(f, s, off + 0.9, 3.5, segLen, 5 + Math.floor(rand() * 5));
+      if (clearance(track, b.x, b.z) < hw + 8 || isReserved(b.x, b.z, 3)) continue;
+      if (rand() < 0.55) standingCrowd(f, s, off + 1, 3.5, segLen, 6 + Math.floor(rand() * 6));
+      if (wallIdx % 7 === 0) {
+        add(f, s * (off + 5), 7, 0.3, 14, 0.3, "steel"); // floodlight pole
+        add(f, s * (off + 4.6), 14.2, 0.9, 0.6, 2.2, "roof");
+      }
       reserved.push({ ...at(f, s * (off + 3)), r: 5 });
     }
   }

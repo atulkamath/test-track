@@ -35,31 +35,51 @@ export function adTexture(i: number) {
   });
 }
 
-/** Rows of spectators: shirts + heads, a few empty seats, the odd flag. */
+/** A dense packed-crowd look: many tiny shirts and heads (the 3D fans sit in front of this). */
 export function crowdTexture() {
-  return canvasTexture(512, 128, (ctx) => {
+  return canvasTexture(512, 256, (ctx) => {
     const rand = mulberry32(7);
-    ctx.fillStyle = "#3d4550";
-    ctx.fillRect(0, 0, 512, 128);
-    const shirts = ["#e9e2d0", "#c8322b", "#2f6fd6", "#f2c230", "#1d1f24", "#ffffff", "#3f9b4a", "#e0701e", "#7a3fb5"];
+    ctx.fillStyle = "#454b53";
+    ctx.fillRect(0, 0, 512, 256);
+    const shirts = ["#e9e2d0", "#c8322b", "#2f6fd6", "#f2c230", "#1d1f24", "#ffffff", "#3f9b4a", "#e0701e", "#7a3fb5", "#e84d8a"];
     const skin = ["#f1c9a5", "#d9a47c", "#a8744f", "#6e4a33", "#f5d6bc"];
-    for (let row = 0; row < 8; row++)
-      for (let col = 0; col < 64; col++) {
-        if (rand() < 0.08) continue;
-        const x = col * 8 + (row % 2) * 4;
-        const y = row * 16;
+    for (let row = 0; row < 32; row++)
+      for (let col = 0; col < 128; col++) {
+        if (rand() < 0.06) continue;
+        const x = col * 4 + (row % 2) * 2;
+        const y = row * 8;
         ctx.fillStyle = shirts[Math.floor(rand() * shirts.length)];
-        ctx.fillRect(x + 1, y + 7, 6, 9);
+        ctx.fillRect(x, y + 3, 3, 5);
         ctx.fillStyle = skin[Math.floor(rand() * skin.length)];
-        ctx.beginPath();
-        ctx.arc(x + 4, y + 5, 2.6, 0, Math.PI * 2);
-        ctx.fill();
-        if (rand() < 0.015) {
-          ctx.fillStyle = shirts[Math.floor(rand() * 4)];
-          ctx.fillRect(x + 3, y - 4, 9, 6);
-        }
+        ctx.fillRect(x + 1, y + 1, 2, 2);
       }
   });
+}
+
+/** Raked gravel: sandy brown with grain and faint rake lines running along the track. */
+export function gravelTexture() {
+  const t = canvasTexture(256, 256, (ctx) => {
+    const rand = mulberry32(19);
+    ctx.fillStyle = "#b39a78";
+    ctx.fillRect(0, 0, 256, 256);
+    for (let k = 0; k < 14000; k++) {
+      const v = rand();
+      ctx.fillStyle = v < 0.4 ? "rgba(90,70,50,0.35)" : v < 0.8 ? "rgba(220,205,180,0.35)" : "rgba(60,50,40,0.4)";
+      ctx.fillRect(rand() * 256, rand() * 256, 1 + (rand() < 0.2 ? 1 : 0), 1);
+    }
+    for (let k = 0; k < 18; k++) {
+      const x = rand() * 256;
+      ctx.strokeStyle = "rgba(80,62,45,0.18)";
+      ctx.lineWidth = 2 + rand() * 3;
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.bezierCurveTo(x + 6, 85, x - 6, 170, x, 256);
+      ctx.stroke();
+    }
+  });
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = 16;
+  return t;
 }
 
 /** One pit garage bay: roller door, team colour stripe, bay number. */

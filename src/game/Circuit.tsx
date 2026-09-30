@@ -5,10 +5,10 @@
 import { useFrame } from "@react-three/fiber";
 import { useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import { hashString, mulberry32 } from "@/sim/rng";
 import type { Track } from "@/sim";
+import { GRAVEL_WIDTH } from "@/sim";
 import { KERB, type Box, type BoxKind, type Layout } from "./layout";
-import { ADS, adTexture, crowdTexture, fenceTexture, garageTexture, towerTexture } from "./textures";
+import { ADS, adTexture, crowdTexture, fenceTexture, garageTexture, gravelTexture, towerTexture } from "./textures";
 
 function useMaterials() {
   return useMemo(() => {
@@ -92,7 +92,6 @@ export function TimingTower({ layout, seed }: { layout: Layout; seed: string }) 
 export function Flags({ layout }: { layout: Layout }) {
   const cloths = useRef<(THREE.Group | null)[]>([]);
   const colors = ["#c8322b", "#ffffff", "#2f6fd6", "#f2c230", "#15181d"];
-  const top = 8 * 0.75 + 1.2 + 5;
   useFrame(({ clock }) => {
     const t = clock.elapsedTime;
     cloths.current.forEach((m, i) => {
@@ -104,7 +103,7 @@ export function Flags({ layout }: { layout: Layout }) {
   return (
     <group>
       {layout.flags.map((f, i) => (
-        <group key={i} position={[f.x, top, f.z]} rotation={[0, f.rot, 0]}>
+        <group key={i} position={[f.x, f.y ?? 0, f.z]} rotation={[0, f.rot, 0]}>
           <mesh position={[0, 2.5, 0]}>
             <cylinderGeometry args={[0.06, 0.06, 5, 6]} />
             <meshStandardMaterial color="#d0d4d8" metalness={0.6} roughness={0.3} />
@@ -184,67 +183,48 @@ export function FerrisWheel({ layout }: { layout: Layout }) {
   );
 }
 
-/** Beige gravel run-off on the outside of every corner, between kerb and tyre wall. */
+/** Raked gravel run-off on the outside of every corner, from the kerb back to the tyre wall. */
 export function GravelTraps({ track, layout }: { track: Track; layout: Layout }) {
   const geometry = useMemo(() => {
     const { points, tangents, halfWidth } = track;
     const n = points.length;
+    const step = track.length / n;
     const pos: number[] = [];
+    const uv: number[] = [];
     const edge = (i: number, off: number) => {
       const p = points[i % n];
       const t = tangents[i % n];
-      return [p.x - t.z * off, 0.012, p.z + t.x * off];
+      return [p.x - t.z * off, 0.013, p.z + t.x * off];
     };
+    const width = GRAVEL_WIDTH + 0.6;
     for (let i = 0; i < n; i++) {
       const s = layout.cornerSide[i];
       if (s === 0) continue;
       const inner = s * (halfWidth + KERB);
-      const outer = s * (halfWidth + KERB + 4.4);
-      const a0 = edge(i, inner);
-      const a1 = edge(i, outer);
-      const b0 = edge(i + 1, inner);
-      const b1 = edge(i + 1, outer);
+      const outer = s * (halfWidth + KERB + width);
+      const v0 = (i * step) / 10;
+      const v1 = ((i + 1) * step) / 10;
+      const a0 = { p: edge(i, inner), uv: [0, v0] };
+      const a1 = { p: edge(i, outer), uv: [width / 10, v0] };
+      const b0 = { p: edge(i + 1, inner), uv: [0, v1] };
+      const b1 = { p: edge(i + 1, outer), uv: [width / 10, v1] };
       const tri = outer > inner ? [a0, a1, b0, a1, b1, b0] : [a0, b0, a1, a1, b0, b1];
-      for (const v of tri) pos.push(...v);
+      for (const v of tri) {
+        pos.push(...v.p);
+        uv.push(...v.uv);
+      }
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
     g.computeVertexNormals();
     return g;
   }, [track, layout]);
+  const map = useMemo(() => gravelTexture(), []);
   return (
     <mesh geometry={geometry} receiveShadow>
-      <meshStandardMaterial color="#cdb996" roughness={1} />
+      <meshStandardMaterial map={map} roughness={1} />
     </mesh>
   );
 }
 
-/** Rolling forested hills in the middle distance (the far mountains sit behind these). */
-export function Hills({ track }: { track: Track }) {
-  const hills = useMemo(() => {
-    const rand = mulberry32(hashString(track.seed + ":hills"));
-    let cx = 0;
-    let cz = 0;
-    for (const p of track.points) {
-      cx += p.x;
-      cz += p.z;
-    }
-    cx /= track.points.length;
-    cz /= track.points.length;
-    return Array.from({ length: 22 }, (_, i) => {
-      const a = (i / 22) * Math.PI * 2 + rand() * 0.2;
-      const d = 560 + rand() * 260;
-      return { x: cx + Math.cos(a) * d, z: cz + Math.sin(a) * d, r: 140 + rand() * 120, h: 0.25 + rand() * 0.25, dark: rand() < 0.5 };
-    });
-  }, [track]);
-  return (
-    <group>
-      {hills.map((h, i) => (
-        <mesh key={i} position={[h.x, -2, h.z]} scale={[h.r, h.r * h.h, h.r]} receiveShadow>
-          <sphereGeometry args={[1, 32, 12, 0, Math.PI * 2, 0, Math.PI / 2]} />
-          <meshStandardMaterial color={h.dark ? "#3f6b34" : "#4d7a3c"} roughness={1} />
-        </mesh>
-      ))}
-    </group>
-  );
-}

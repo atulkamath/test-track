@@ -20,7 +20,7 @@ Controls: arrows / WASD, R to restart. Touch buttons on phones.
   - 4 AI cars (autopilot) live in the sim, so traffic is identical for every player and replays exactly.
   - Collisions: cars bump each other, cones get knocked (small speed loss), corner tyre walls are solid.
     Fences, grandstands etc. are scenery only.
-  - `RUN_VERSION` (currently 2) must be bumped whenever sim rules change; older runs are rejected.
+  - `RUN_VERSION` (currently 3) must be bumped whenever sim rules change; older runs are rejected.
 - `src/game/` — R3F renderer + browser tick loop (`engine.ts`). Reads sim state only.
   Spectators (`Crowd.tsx`) are GPU-animated instances; skid marks, suspension and brake lights are visual only.
 - `test/golden` values in `sim.test.ts`: if they change, every stored run is invalidated.
