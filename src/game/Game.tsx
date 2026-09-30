@@ -6,13 +6,15 @@ import { Bloom, EffectComposer, HueSaturation, N8AO, SMAA, Vignette } from "@rea
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { DOWN, LEFT, RIGHT, UP, generateTrack, type Track } from "@/sim";
-import { ALL_WHEELS, Car, FRONT_WHEELS, WHEEL_RADIUS } from "./Car";
+import { animateCar, Car, newCarAnim, PLAYER_MODEL } from "./Car";
+import { Crowd } from "./Crowd";
+import { Obstacles, SkidMarks, Traffic, type SkidHandle } from "./Dynamic";
 import { Engine, formatTicks } from "./engine";
-import { Cones, FinishLine, Ground, Road, Trees } from "./Scene";
+import { FinishLine, GatePosts, Ground, Road, Trees } from "./Scene";
 import { Tacho, type TachoHandle } from "./Tacho";
 import { CircuitBoxes, FerrisWheel, Flags, GravelTraps, Hills, TimingTower } from "./Circuit";
-import { buildLayout } from "./layout";
-import { Billboards, Mountains, TyreWalls } from "./Trackside";
+import { buildLayout, type Layout } from "./layout";
+import { Billboards, Mountains } from "./Trackside";
 import styles from "./game.module.css";
 
 
@@ -41,11 +43,13 @@ function Driver({
   input,
   started,
   onTick,
+  skids,
 }: {
   engine: Engine;
   input: React.RefObject<number>;
   started: React.RefObject<boolean>;
   onTick: () => void;
+  skids: React.RefObject<SkidHandle | null>;
 }) {
   const car = useRef<THREE.Group>(null);
   const target = useMemo(() => new THREE.Vector3(), []);
@@ -53,7 +57,7 @@ function Driver({
   const lookAt = useMemo(() => new THREE.Vector3(), []);
   const snapped = useRef(false);
   const sun = useRef<THREE.DirectionalLight>(null);
-  const steerVisual = useRef(0);
+  const anim = useMemo(() => newCarAnim(), []);
 
   useFrame(({ camera }, delta) => {
     if (started.current) engine.advance(delta, () => input.current);
@@ -63,15 +67,10 @@ function Driver({
     car.current?.position.set(p.x, 0, p.z);
     car.current?.rotation.set(0, p.angle, 0);
 
-    // Wheels: roll with speed, front pair turns toward the held steering direction.
-    const steerTarget = (input.current & LEFT ? 1 : 0) - (input.current & RIGHT ? 1 : 0);
-    steerVisual.current += (steerTarget * 0.4 - steerVisual.current) * (1 - Math.exp(-delta * 12));
-    for (const name of ALL_WHEELS) {
-      const w = car.current?.getObjectByName(name);
-      if (!w) continue;
-      w.rotation.x += (engine.finished ? 0 : speed * delta) / WHEEL_RADIUS;
-      if (FRONT_WHEELS.includes(name)) w.rotation.y = steerVisual.current;
-    }
+    const steer = (input.current & LEFT ? 1 : 0) - (input.current & RIGHT ? 1 : 0);
+    const braking = (input.current & DOWN) !== 0 && speed > 0.5 && !engine.finished;
+    if (car.current) animateCar(car.current, anim, speed, p.angle, engine.finished ? 0 : steer, braking, delta);
+    skids.current?.track("player", engine.sim.state.car, p.x, p.z, p.angle, braking);
     // Keep the shadow camera centred on the car so a small shadow map stays sharp.
     if (sun.current) {
       sun.current.position.set(p.x + SUN_DIR.x * 150, SUN_DIR.y * 150, p.z + SUN_DIR.z * 150);
@@ -121,7 +120,7 @@ function Driver({
         shadow-bias={-0.0005}
       />
       <Suspense fallback={null}>
-        <Car ref={car} />
+        <Car ref={car} model={PLAYER_MODEL} />
       </Suspense>
     </>
   );
@@ -130,8 +129,7 @@ function Driver({
 /** Late-afternoon sun: low, warm, long shadows. Used for both the sky shader and the shadow-casting light. */
 const SUN_DIR = new THREE.Vector3(420, 95, 210).normalize();
 
-function World({ track }: { track: Track }) {
-  const layout = useMemo(() => buildLayout(track), [track]);
+function World({ track, layout }: { track: Track; layout: Layout }) {
   return (
     <>
       <color attach="background" args={["#c9d6df"]} />
@@ -155,9 +153,8 @@ function World({ track }: { track: Track }) {
       <TimingTower layout={layout} seed={track.seed} />
       <Flags layout={layout} />
       <FerrisWheel layout={layout} />
-      <TyreWalls track={track} layout={layout} />
       <Billboards track={track} layout={layout} />
-      <Cones track={track} />
+      <GatePosts track={track} />
       <Trees track={track} reserved={layout.reserved} />
     </>
   );
@@ -178,6 +175,8 @@ function Effects() {
 
 export default function Game() {
   const track = useMemo(() => generateTrack(todaySeed()), []);
+  const layout = useMemo(() => buildLayout(track), [track]);
+  const skids = useRef<SkidHandle>(null);
   const [engine, setEngine] = useState(() => new Engine(track));
   const [lapTicks, setLapTicks] = useState<number | null>(null);
   const [best, setBest] = useState<number | null>(null);
@@ -189,6 +188,7 @@ export default function Game() {
   const offRoadEl = useRef<HTMLDivElement>(null);
 
   const restart = useCallback(() => {
+    skids.current?.clear();
     setEngine(new Engine(track));
     setLapTicks(null);
     setStarted(false);
@@ -257,8 +257,12 @@ export default function Game() {
         gl={{ antialias: false, powerPreference: "high-performance" }}
         camera={{ fov: 58, near: 0.1, far: 2600 }}
       >
-        <World track={track} />
-        <Driver engine={engine} input={input} started={startedRef} onTick={onTick} />
+        <World track={track} layout={layout} />
+        <Driver engine={engine} input={input} started={startedRef} onTick={onTick} skids={skids} />
+        <Traffic engine={engine} skids={skids} />
+        <Obstacles engine={engine} />
+        <SkidMarks ref={skids} />
+        <Crowd people={layout.people} engine={engine} />
         <Effects />
       </Canvas>
 

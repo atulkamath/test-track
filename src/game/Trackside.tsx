@@ -2,7 +2,6 @@
 
 // Scenery only. Nothing here affects the sim.
 import { useMemo } from "react";
-import * as THREE from "three";
 import { hashString, mulberry32 } from "@/sim/rng";
 import type { Track } from "@/sim";
 import { clearance, KERB, type Layout } from "./layout";
@@ -34,49 +33,6 @@ export function Mountains({ track }: { track: Track }) {
         </mesh>
       ))}
     </group>
-  );
-}
-
-/** Tyre stacks on the outside of every real corner. */
-export function TyreWalls({ track, layout }: { track: Track; layout: Layout }) {
-  const stacks = useMemo(() => {
-    const n = track.points.length;
-    const out: { x: number; z: number; band: boolean }[] = [];
-    for (let i = 0; i < n; i += 2) {
-      const s = layout.cornerSide[i];
-      if (s === 0) continue;
-      const p = side(track, i, s * (track.halfWidth + KERB + 5));
-      if (clearance(track, p.x, p.z) < track.halfWidth + 4) continue;
-      out.push({ ...p, band: (i / 2) % 2 === 0 });
-    }
-    return out;
-  }, [track, layout]);
-
-  const count = stacks.length * 3;
-  const setup = (mesh: THREE.InstancedMesh | null) => {
-    if (!mesh) return;
-    const m = new THREE.Matrix4();
-    const black = new THREE.Color("#1b1b1b");
-    const red = new THREE.Color("#c8322b");
-    const white = new THREE.Color("#eeeeee");
-    stacks.forEach((s, k) => {
-      for (let j = 0; j < 3; j++) {
-        m.makeTranslation(s.x, 0.18 + j * 0.36, s.z);
-        mesh.setMatrixAt(k * 3 + j, m);
-        mesh.setColorAt(k * 3 + j, j === 2 ? (s.band ? red : white) : black);
-      }
-    });
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    mesh.computeBoundingSphere();
-  };
-
-  if (count === 0) return null;
-  return (
-    <instancedMesh ref={setup} args={[undefined, undefined, count]} castShadow receiveShadow>
-      <cylinderGeometry args={[0.55, 0.55, 0.34, 10]} />
-      <meshStandardMaterial roughness={0.9} />
-    </instancedMesh>
   );
 }
 

@@ -1,5 +1,5 @@
 // Where the circuit set pieces go. Rendering only: nothing here touches the sim.
-import type { Track } from "@/sim";
+import { cornerSides, type Track } from "@/sim";
 import { hashString, mulberry32 } from "@/sim/rng";
 
 export const KERB = 1.2;
@@ -89,20 +89,13 @@ export function clearance(track: Track, x: number, z: number): number {
   return Math.sqrt(best);
 }
 
-/** Signed turn at sample i: < 0 is a left turn (outside on the right), magnitude ~ sharpness. */
+/** Signed turn at sample i: < 0 is a left turn, magnitude ~ sharpness. */
 function turnAt(track: Track, i: number): number {
   const { tangents } = track;
   const n = tangents.length;
   const a = tangents[(i - 8 + n) % n];
   const b = tangents[(i + 8) % n];
   return a.x * b.z - a.z * b.x;
-}
-
-export function computeCornerSides(track: Track): number[] {
-  return track.tangents.map((_, i) => {
-    const turn = turnAt(track, i);
-    return Math.abs(turn) < 0.22 ? 0 : turn < 0 ? 1 : -1;
-  });
 }
 
 export function buildLayout(track: Track): Layout {
@@ -113,7 +106,7 @@ export function buildLayout(track: Track): Layout {
   const rand = mulberry32(hashString(track.seed + ":crowd"));
   const flags: Spot[] = [];
   const reserved: Layout["reserved"] = [];
-  const cornerSide = computeCornerSides(track);
+  const cornerSide = cornerSides(track);
 
   const isReserved = (x: number, z: number, pad: number) =>
     reserved.some((r) => (r.x - x) ** 2 + (r.z - z) ** 2 < (r.r + pad) ** 2);

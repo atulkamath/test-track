@@ -168,34 +168,12 @@ export function FinishLine({ track }: { track: Track }) {
   );
 }
 
-/** Cones on alternating sides, plus a post at each checkpoint gate. */
-export function Cones({ track }: { track: Track }) {
-  const cones = useMemo(() => {
-    const out: [number, number][] = [];
-    const { points, tangents, halfWidth } = track;
-    for (let i = 6; i < points.length - 3; i += 7) {
-      const side = Math.floor(i / 7) % 2 ? 1 : -1;
-      const off = side * (halfWidth + KERB_WIDTH + 1.5);
-      out.push([points[i].x - tangents[i].z * off, points[i].z + tangents[i].x * off]);
-    }
-    return out;
-  }, [track]);
+/** A blue post either side of the road at each checkpoint gate. */
+export function GatePosts({ track }: { track: Track }) {
   return (
     <group>
-      {cones.map(([x, z], i) => (
-        <group key={i} position={[x, 0, z]}>
-          <mesh position={[0, 0.45, 0]} castShadow>
-            <coneGeometry args={[0.35, 0.9, 12]} />
-            <meshStandardMaterial color="#ff7a1a" />
-          </mesh>
-          <mesh position={[0, 0.03, 0]}>
-            <boxGeometry args={[0.8, 0.06, 0.8]} />
-            <meshStandardMaterial color="#222" />
-          </mesh>
-        </group>
-      ))}
       {track.gates.slice(1).map((g, i) => (
-        <group key={`g${i}`}>
+        <group key={i}>
           {[g.a, g.b].map((p, k) => {
             // Posts sit just outside the kerb, not at the far gate ends.
             const cx = (g.a.x + g.b.x) / 2;
@@ -203,7 +181,7 @@ export function Cones({ track }: { track: Track }) {
             const f = (track.halfWidth + KERB_WIDTH + 0.6) / (track.halfWidth * 2.5);
             return (
               <mesh key={k} position={[cx + (p.x - cx) * f, 1.2, cz + (p.z - cz) * f]} castShadow>
-                <cylinderGeometry args={[0.18, 0.18, 2.4, 8]} />
+                <cylinderGeometry args={[0.18, 0.18, 2.4, 12]} />
                 <meshStandardMaterial color="#2f7df6" emissive="#1a4fb0" emissiveIntensity={0.3} />
               </mesh>
             );
