@@ -3,11 +3,6 @@
   inset: 0;
 }
 
-/* Canvas is rendered at ~448 lines; upscale with hard pixels like a PS2 on a flat panel. */
-.canvas canvas {
-  image-rendering: pixelated;
-}
-
 .hud {
   position: absolute;
   top: 18px;

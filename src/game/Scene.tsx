@@ -56,25 +56,42 @@ function stripGeometry(
   return g;
 }
 
-/** Procedural noise texture (seeded, so it looks the same every load). */
-function noiseTexture(base: string, specks: string[], count: number, seed: number, repeat: number) {
+/**
+ * Procedural surface texture (seeded, so it looks the same every load): soft large-scale blotches for
+ * natural variation, plus a faint fine grain so it doesn't look flat up close. Tiles seamlessly.
+ */
+function surfaceTexture(base: string, tones: string[], seed: number, repeat: number, grain: number) {
+  const S = 512;
   const c = document.createElement("canvas");
-  c.width = c.height = 256;
+  c.width = c.height = S;
   const ctx = c.getContext("2d")!;
   const rand = mulberry32(seed);
   ctx.fillStyle = base;
-  ctx.fillRect(0, 0, 256, 256);
-  for (let k = 0; k < count; k++) {
-    ctx.fillStyle = specks[Math.floor(rand() * specks.length)];
-    ctx.globalAlpha = 0.25 + rand() * 0.5;
-    const s = rand() < 0.9 ? 1 : 2;
-    ctx.fillRect(Math.floor(rand() * 256), Math.floor(rand() * 256), s, s);
+  ctx.fillRect(0, 0, S, S);
+  const blob = (x: number, y: number, r: number, color: string, alpha: number) => {
+    // Draw wrapped copies so the texture tiles without seams.
+    for (const dx of [-S, 0, S])
+      for (const dy of [-S, 0, S]) {
+        const g = ctx.createRadialGradient(x + dx, y + dy, 0, x + dx, y + dy, r);
+        g.addColorStop(0, color);
+        g.addColorStop(1, "transparent");
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = g;
+        ctx.fillRect(x + dx - r, y + dy - r, r * 2, r * 2);
+      }
+  };
+  for (let k = 0; k < 140; k++) blob(rand() * S, rand() * S, 30 + rand() * 110, tones[Math.floor(rand() * tones.length)], 0.18);
+  for (let k = 0; k < 6000; k++) {
+    ctx.globalAlpha = grain * (0.5 + rand() * 0.5);
+    ctx.fillStyle = rand() < 0.5 ? "#000" : "#fff";
+    ctx.fillRect(rand() * S, rand() * S, 1, 1);
   }
+  ctx.globalAlpha = 1;
   const t = new THREE.CanvasTexture(c);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.repeat.set(repeat, repeat);
   t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 8;
+  t.anisotropy = 16;
   return t;
 }
 
@@ -86,7 +103,7 @@ export function Road({ track }: { track: Track }) {
     const kerbColor = (i: number) => (Math.floor(i / 2) % 2 ? red : white);
     const kerbs = [stripGeometry(track, hw, hw + KERB_WIDTH, 0.03, kerbColor), stripGeometry(track, -hw, -hw - KERB_WIDTH, 0.03, kerbColor)];
     const lines = [stripGeometry(track, hw - 0.7, hw - 0.4, 0.025), stripGeometry(track, -hw + 0.7, -hw + 0.4, 0.025)];
-    const tarmac = noiseTexture("#50545a", ["#2b2e33", "#6c7076", "#3b3f44", "#7d8187"], 9000, 11, 1);
+    const tarmac = surfaceTexture("#4a4e54", ["#3c4046", "#565a60", "#44484e"], 11, 1, 0.05);
     return { road: stripGeometry(track, -hw, hw, 0.02), kerbs, lines, tarmac };
   }, [track, hw]);
 
@@ -198,7 +215,7 @@ export function Cones({ track }: { track: Track }) {
 }
 
 export function Ground() {
-  const grass = useMemo(() => noiseTexture("#5f9442", ["#4c7d35", "#6fa64d", "#557f3a", "#78ad55"], 14000, 23, 250), []);
+  const grass = useMemo(() => surfaceTexture("#5b8f40", ["#4d7f36", "#6a9f4b", "#57883c", "#739f4f"], 23, 80, 0.04), []);
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
       <planeGeometry args={[3000, 3000]} />
@@ -239,12 +256,12 @@ export function Trees({ track }: { track: Track }) {
   return (
     <group>
       <instancedMesh ref={setMatrices(trunks)} args={[undefined, undefined, trunks.length]} castShadow>
-        <cylinderGeometry args={[0.25, 0.35, 2.4, 6]} />
+        <cylinderGeometry args={[0.25, 0.35, 2.4, 10]} />
         <meshStandardMaterial color="#6b4a2b" />
       </instancedMesh>
       <instancedMesh ref={setMatrices(crowns)} args={[undefined, undefined, crowns.length]} castShadow>
-        <coneGeometry args={[1.8, 5, 7]} />
-        <meshStandardMaterial color="#2f6b3a" flatShading />
+        <coneGeometry args={[1.8, 5, 16]} />
+        <meshStandardMaterial color="#2f6b3a" roughness={0.85} />
       </instancedMesh>
     </group>
   );

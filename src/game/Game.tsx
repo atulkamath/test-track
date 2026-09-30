@@ -2,7 +2,7 @@
 
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Environment, Lightformer, Sky } from "@react-three/drei";
-import { Bloom, BrightnessContrast, EffectComposer, HueSaturation, Vignette } from "@react-three/postprocessing";
+import { Bloom, EffectComposer, HueSaturation, N8AO, SMAA, Vignette } from "@react-three/postprocessing";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { DOWN, LEFT, RIGHT, UP, generateTrack, type Track } from "@/sim";
@@ -13,8 +13,6 @@ import { Tacho, type TachoHandle } from "./Tacho";
 import { Billboards, Grandstand, Mountains, TyreWalls } from "./Trackside";
 import styles from "./game.module.css";
 
-/** PS2 output height. The canvas is drawn at this many lines and upscaled with hard pixels. */
-const RENDER_LINES = 448;
 
 const KEY_BITS: Record<string, number> = {
   ArrowUp: UP,
@@ -110,11 +108,12 @@ function Driver({
         ref={sun}
         intensity={1.8}
         castShadow
-        shadow-mapSize={[2048, 2048]}
-        shadow-camera-left={-60}
-        shadow-camera-right={60}
-        shadow-camera-top={60}
-        shadow-camera-bottom={-60}
+        shadow-mapSize={[4096, 4096]}
+        shadow-camera-left={-80}
+        shadow-camera-right={80}
+        shadow-camera-top={80}
+        shadow-camera-bottom={-80}
+        shadow-radius={4}
         shadow-camera-far={300}
         shadow-bias={-0.0005}
       />
@@ -133,7 +132,7 @@ function World({ track }: { track: Track }) {
       <fog attach="fog" args={["#b9d2e6", 220, 1500]} />
       <hemisphereLight args={["#e6f2ff", "#51703d", 0.8]} />
       {/* Local reflection map (no network): bright sky above, a few light strips for paint highlights. */}
-      <Environment resolution={128} environmentIntensity={0.55}>
+      <Environment resolution={256} environmentIntensity={0.6}>
         <Lightformer form="rect" intensity={2} color="#cfe4ff" position={[0, 12, 0]} rotation-x={Math.PI / 2} scale={[40, 40, 1]} />
         <Lightformer form="rect" intensity={4} position={[-8, 5, -6]} rotation-y={Math.PI / 3} scale={[12, 1.2, 1]} />
         <Lightformer form="rect" intensity={4} position={[8, 5, 6]} rotation-y={-Math.PI / 2.5} scale={[12, 1.2, 1]} />
@@ -152,27 +151,17 @@ function World({ track }: { track: Track }) {
   );
 }
 
-/** PS2-era glow and grade: soft bloom on bright bits, slightly punchy colour, dark corners. */
+/** Modern grade: ambient occlusion for contact shading, gentle bloom, clean anti-aliasing. */
 function Effects() {
   return (
     <EffectComposer multisampling={0}>
-      <Bloom mipmapBlur luminanceThreshold={0.78} luminanceSmoothing={0.2} intensity={0.55} />
-      <HueSaturation saturation={0.12} />
-      <BrightnessContrast contrast={0.06} />
-      <Vignette offset={0.3} darkness={0.55} />
+      <N8AO aoRadius={2.5} distanceFalloff={1} intensity={2.2} quality="medium" halfRes />
+      <Bloom mipmapBlur luminanceThreshold={0.9} luminanceSmoothing={0.15} intensity={0.3} />
+      <HueSaturation saturation={0.06} />
+      <Vignette offset={0.35} darkness={0.35} />
+      <SMAA />
     </EffectComposer>
   );
-}
-
-function useRenderDpr() {
-  const calc = () => Math.min(1, RENDER_LINES / window.innerHeight);
-  const [dpr, setDpr] = useState(calc);
-  useEffect(() => {
-    const onResize = () => setDpr(calc());
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
-  return dpr;
 }
 
 export default function Game() {
@@ -186,7 +175,6 @@ export default function Game() {
   const timeEl = useRef<HTMLDivElement>(null);
   const tacho = useRef<TachoHandle>(null);
   const offRoadEl = useRef<HTMLDivElement>(null);
-  const dpr = useRenderDpr();
 
   const restart = useCallback(() => {
     setEngine(new Engine(track));
@@ -252,9 +240,8 @@ export default function Game() {
   return (
     <div className={styles.root}>
       <Canvas
-        className={styles.canvas}
-        shadows
-        dpr={dpr}
+        shadows="soft"
+        dpr={[1, 2]}
         gl={{ antialias: false, powerPreference: "high-performance" }}
         camera={{ fov: 58, near: 0.1, far: 2600 }}
       >

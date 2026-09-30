@@ -11,7 +11,7 @@
   - `Models/GLB format/Textures/colormap.png` -> `public/models/Textures/colormap.png`
 
 ## Libraries
-three, @react-three/fiber, @react-three/drei, @react-three/postprocessing: MIT. postprocessing: Zlib.
+three, @react-three/fiber, @react-three/drei, @react-three/postprocessing: MIT. postprocessing: Zlib. n8ao (ambient occlusion): ISC.
 HUD font: Exo 2 (SIL Open Font License), via next/font/google.
 
 Everything else (track, trees, scenery, textures, billboards) is generated in code.
