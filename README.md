@@ -16,12 +16,14 @@ Controls: arrows / WASD, R restart, C cycle camera (chase, far chase, cockpit, r
 - `src/sim/` — pure, deterministic sim (no React/Three/DOM). Reuse this on the server.
   - 60 ticks/s, integer ticks, one input bitmask per tick (`UP=1 DOWN=2 LEFT=4 RIGHT=8`).
   - No `Math.sin/cos` anywhere, including track gen: `trig.ts` builds sin/cos from `+ - * /`.
-  - Lap = cross gates 1..7 in order, then the finish gate. Timer starts on the first key press.
+  - A race is 3 laps from a standing grid of 5 cars, the player starting last. Lap = cross gates 1..7 in
+    order, then the finish gate. `racePosition()` ranks cars by distance covered. The 3 s start lights are
+    in the browser engine, not the sim: a replay starts at lights out.
   - 4 AI cars (autopilot) live in the sim, so traffic is identical for every player and replays exactly.
   - Collisions: cars bump each other, cones get knocked (small speed loss), corner tyre walls are solid, and
     barriers run down both sides of the whole lap so a car can never leave the circuit.
   - Acceleration is traction- then power-limited against air drag (0-100 km/h in 3.7 s, top speed 230 km/h); braking is 1.5 g.
-  - `RUN_VERSION` (currently 5) must be bumped whenever sim rules change; older runs are rejected.
+  - `RUN_VERSION` (currently 6) must be bumped whenever sim rules change; older runs are rejected.
 - `src/game/` — R3F renderer + browser tick loop (`engine.ts`). Reads sim state only.
   Spectators (`Crowd.tsx`) are GPU-animated instances; skid marks, suspension and brake lights are visual only.
 - `test/golden` values in `sim.test.ts`: if they change, every stored run is invalidated.

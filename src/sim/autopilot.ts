@@ -12,9 +12,13 @@ export interface Skill {
   lookAhead: number;
 }
 
+/** Speed (m/s) a full-pace driver will hold the throttle up to; scaled by `pace`. */
+const TOP_SPEED = 64;
+
 export const DEFAULT_SKILL: Skill = { pace: 1, lookAhead: 6 };
 
-function nearestIndex(track: Track, x: number, z: number): number {
+/** Index of the centreline sample closest to (x, z). */
+export function nearestIndex(track: Track, x: number, z: number): number {
   let best = 0;
   let bestSq = Infinity;
   const pts = track.points;
@@ -55,6 +59,8 @@ export function autopilotInput(track: Track, car: CarState, skill: Skill = DEFAU
     const dist = k * 2; // samples are 2 m apart
     if (speedSq > safe * safe + 2 * BRAKE * 0.7 * dist) brake = true;
   }
-  input |= brake ? DOWN : UP;
+  // Less skilled drivers also lift earlier on the straights, so a quicker car can get past them.
+  if (brake) input |= DOWN;
+  else if (car.speed < TOP_SPEED * skill.pace) input |= UP;
   return input;
 }

@@ -1,8 +1,8 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { createSim, generateTrack, hashState, replay, step, DOWN, LEFT, RIGHT, UP } from "../src/sim";
-import { autopilotRun } from "./autopilot";
+import { createSim, generateTrack, hashState, racePosition, replay, step, DOWN, LAPS, LEFT, RIGHT, UP } from "../src/sim";
+import { autopilotInput, autopilotRun } from "./autopilot";
 
 /** A fixed, human-ish input script: accelerate, weave, brake. */
 function scriptedInputs(ticks: number): number[] {
@@ -18,7 +18,7 @@ function scriptedInputs(ticks: number): number[] {
 
 describe("determinism", () => {
   it("same seed + inputs -> identical state every run", () => {
-    const run = { version: 5 as const, seed: "2026-10-01", inputs: scriptedInputs(1800) };
+    const run = { version: 6 as const, seed: "2026-10-01", inputs: scriptedInputs(1800) };
     const a = replay(run);
     const b = replay(run);
     expect(a).toEqual(b);
@@ -28,7 +28,7 @@ describe("determinism", () => {
     const inputs = scriptedInputs(900);
     const sim = createSim("2026-10-01");
     inputs.forEach((i) => step(sim, i));
-    expect(hashState(sim.state)).toBe(replay({ version: 5, seed: "2026-10-01", inputs }).hash);
+    expect(hashState(sim.state)).toBe(replay({ version: 6, seed: "2026-10-01", inputs }).hash);
   });
 
   it("different inputs -> different state", () => {
@@ -36,19 +36,19 @@ describe("determinism", () => {
     const changed = [...inputs];
     changed[10] ^= UP; // lift off the throttle for one tick early on
     const seed = "2026-10-01";
-    expect(replay({ version: 5, seed, inputs }).hash).not.toBe(replay({ version: 5, seed, inputs: changed }).hash);
+    expect(replay({ version: 6, seed, inputs }).hash).not.toBe(replay({ version: 6, seed, inputs: changed }).hash);
   });
 
   // Golden values: if these change, sim behaviour changed and every stored run is invalidated.
   // Update deliberately, never to "make the test pass".
   it("golden: scripted run", () => {
-    expect(replay({ version: 5, seed: "golden", inputs: scriptedInputs(1200) }).hash).toBe("d7aa9a5f");
+    expect(replay({ version: 6, seed: "golden", inputs: scriptedInputs(1200) }).hash).toBe("ac848e88");
   });
 
   it("golden: autopilot lap", () => {
     const run = autopilotRun("golden");
     const result = replay(run);
-    expect({ lapTicks: result.lapTicks, hash: result.hash }).toEqual({ lapTicks: 1511, hash: "16d43fb3" });
+    expect({ lapTicks: result.lapTicks, hash: result.hash }).toEqual({ lapTicks: 4855, hash: "30d86776" });
   });
 });
 
@@ -68,6 +68,39 @@ describe("track", () => {
   });
 });
 
+describe("race", () => {
+  it("starts from a standing grid with the player last", () => {
+    const { state } = createSim("2026-10-01");
+    const cars = [state.car, ...state.bots];
+    expect(cars.length).toBe(5);
+    for (const c of cars) expect(c.speed).toBe(0);
+    for (let a = 0; a < cars.length; a++)
+      for (let b = a + 1; b < cars.length; b++) expect(Math.hypot(cars[a].x - cars[b].x, cars[a].z - cars[b].z)).toBeGreaterThan(4);
+    expect(racePosition(state)).toBe(5);
+    expect(state.lap).toBe(0);
+  });
+
+  it("counts three laps, tracks the best lap and position, then finishes", () => {
+    const sim = createSim("2026-10-03");
+    const laps: number[] = [];
+    for (let t = 0; t < 60 * 240 && sim.state.lapTicks === null; t++) {
+      const before = sim.state.lap;
+      step(sim, autopilotInput(sim));
+      if (sim.state.lap !== before) laps.push(sim.state.tick);
+      const pos = racePosition(sim.state);
+      expect(pos).toBeGreaterThanOrEqual(1);
+      expect(pos).toBeLessThanOrEqual(5);
+    }
+    expect(laps.length).toBe(LAPS);
+    expect(sim.state.lapTicks).toBe(laps[LAPS - 1]);
+    const lapTimes = laps.map((t, i) => t - (laps[i - 1] ?? 0));
+    expect(sim.state.bestLapTicks).toBe(Math.min(...lapTimes));
+    // The whole AI field keeps racing: every car has covered at least two laps by the time the player finishes.
+    const n = sim.track.points.length;
+    for (const p of sim.state.progress.slice(1)) expect(p / n).toBeGreaterThan(2);
+  });
+});
+
 describe("laps", () => {
   it.each(["2026-10-01", "2026-10-02", "2026-10-03"])("autopilot completes a lap on %s", (seed) => {
     const run = autopilotRun(seed);
@@ -78,7 +111,7 @@ describe("laps", () => {
   it("no lap without passing every checkpoint (reversing over the line)", () => {
     // Drive backwards over the start line: gate 0 is behind the start position.
     const inputs = Array(600).fill(DOWN);
-    expect(replay({ version: 5, seed: "2026-10-01", inputs }).lapTicks).toBeNull();
+    expect(replay({ version: 6, seed: "2026-10-01", inputs }).lapTicks).toBeNull();
   });
 
   it("no lap when skipping a checkpoint", () => {

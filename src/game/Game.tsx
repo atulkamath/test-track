@@ -6,7 +6,7 @@ import { Bloom, EffectComposer, HueSaturation, N8AO, SMAA, ToneMapping, Vignette
 import { ToneMappingMode } from "postprocessing";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
-import { COS, DOWN, LEFT, RIGHT, SIN, UP, generateTrack, type Track } from "@/sim";
+import { COS, DOWN, LAPS, LEFT, RIGHT, SIN, UP, generateTrack, racePosition, type Track } from "@/sim";
 import { Sound, type OtherCar } from "./audio";
 import { CameraRig, VIEWS } from "./camera";
 import { animateCar, Car, newCarAnim, PLAYER_MODEL } from "./Car";
@@ -87,6 +87,10 @@ function setCockpitLook(car: THREE.Object3D, inside: boolean) {
     mat.userData.opacity ??= mat.opacity;
     mat.opacity = inside ? 0.1 : (mat.userData.opacity as number);
   });
+}
+
+function ordinal(n: number): string {
+  return `${n}${n === 1 ? "st" : n === 2 ? "nd" : n === 3 ? "rd" : "th"}`;
 }
 
 function resetGears(g: Gearbox) {
@@ -291,7 +295,11 @@ export default function Game() {
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [engine, setEngine] = useState(() => new Engine(track));
   const [lapTicks, setLapTicks] = useState<number | null>(null);
-  const [best, setBest] = useState<number | null>(null);
+  const [result, setResult] = useState<{ position: number; bestLap: number | null } | null>(null);
+  const lapEl = useRef<HTMLDivElement>(null);
+  const posEl = useRef<HTMLDivElement>(null);
+  const bestEl = useRef<HTMLDivElement>(null);
+  const lightsEl = useRef<HTMLDivElement>(null);
   const [started, setStarted] = useState(false);
   const input = useRef(0);
   const startedRef = useRef(false);
@@ -304,6 +312,7 @@ export default function Game() {
     resetGears(gears);
     setEngine(new Engine(track));
     setLapTicks(null);
+    setResult(null);
     setStarted(false);
     startedRef.current = false;
   }, [track, gears]);
@@ -364,14 +373,24 @@ export default function Game() {
   // Called every frame: write HUD text directly (no React re-render) and catch lap completion.
   const onTick = useCallback(() => {
     const s = engine.sim.state;
-    if (timeEl.current) timeEl.current.textContent = formatTicks(s.tick);
+    // Current lap's time while racing; the total once finished.
+    if (timeEl.current) timeEl.current.textContent = formatTicks(s.lapTicks ?? s.tick - s.lapStartTick);
+    if (lapEl.current) lapEl.current.textContent = `${Math.min(s.lap + 1, LAPS)}/${LAPS}`;
+    if (posEl.current) posEl.current.textContent = ordinal(racePosition(s));
+    if (bestEl.current) bestEl.current.textContent = s.bestLapTicks === null ? "--.---" : formatTicks(s.bestLapTicks);
+    if (lightsEl.current) {
+      // Start lights: 3, 2, 1, then GO for the first second of the race.
+      const c = engine.countdown;
+      const text = !startedRef.current ? "" : c > 0 ? String(Math.ceil(c)) : s.tick < 60 && s.lapTicks === null ? "GO" : "";
+      if (lightsEl.current.textContent !== text) lightsEl.current.textContent = text;
+      lightsEl.current.dataset.go = text === "GO" ? "1" : "0";
+    }
     const [gear, rpm] = gearDisplay(gears, startedRef.current);
     tacho.current?.update(s.car.speed, gear, rpm);
     if (offRoadEl.current) offRoadEl.current.style.opacity = s.car.offRoad ? "1" : "0";
     if (s.lapTicks !== null && lapTicks === null) {
-      const t = s.lapTicks;
-      setLapTicks(t);
-      setBest((b) => (b === null || t < b ? t : b));
+      setLapTicks(s.lapTicks);
+      setResult({ position: racePosition(s), bestLap: s.bestLapTicks });
     }
   }, [engine, lapTicks, gears]);
 
@@ -411,11 +430,29 @@ export default function Game() {
           </div>
         </div>
         <div className={styles.box}>
-          <div className={styles.label}>Best</div>
-          <div className={styles.best}>{best === null ? "--.---" : formatTicks(best)}</div>
+          <div className={styles.label}>Best lap</div>
+          <div className={styles.best} ref={bestEl}>
+            --.---
+          </div>
         </div>
         <div className={styles.seed}>{track.seed}</div>
       </div>
+      <div className={styles.race}>
+        <div className={styles.box}>
+          <div className={styles.label}>Position</div>
+          <div className={styles.position}>
+            <span ref={posEl}>5th</span>
+            <small>/ {engine.sim.state.bots.length + 1}</small>
+          </div>
+        </div>
+        <div className={styles.box}>
+          <div className={styles.label}>Lap</div>
+          <div className={styles.best} ref={lapEl}>
+            1/{LAPS}
+          </div>
+        </div>
+      </div>
+      <div className={styles.lights} ref={lightsEl} />
       <Tacho ref={tacho} />
       <div className={styles.offRoad} ref={offRoadEl}>
         Off road
@@ -434,9 +471,10 @@ export default function Game() {
 
       {lapTicks !== null && (
         <div className={styles.panel}>
-          <div className={styles.panelLabel}>Lap complete</div>
+          <div className={styles.panelLabel}>Race finished</div>
+          <div className={styles.panelPosition}>{result ? ordinal(result.position) : ""}</div>
           <div className={styles.panelTime}>{formatTicks(lapTicks)}</div>
-          <div className={styles.panelTicks}>{lapTicks} ticks</div>
+          <div className={styles.panelTicks}>best lap {result?.bestLap != null ? formatTicks(result.bestLap) : "--.---"}</div>
           <div className={styles.actions}>
             <button onClick={download}>Download run.json</button>
             <button onClick={restart}>Retry (R)</button>

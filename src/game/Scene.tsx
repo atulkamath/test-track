@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import * as THREE from "three";
 import { hashString, mulberry32 } from "@/sim/rng";
-import type { Track } from "@/sim";
+import { GRID_SIDE, gridSlot, type Track } from "@/sim";
 import { grassMaterial, roadMaterial } from "./materials";
 import type { HeightFn } from "./terrain";
 
@@ -67,14 +67,12 @@ export function Road({ track }: { track: Track }) {
     const kerbs = [stripGeometry(track, hw, hw + KERB_WIDTH, 0.03, kerbColor), stripGeometry(track, -hw, -hw - KERB_WIDTH, 0.03, kerbColor)];
     const lines = [stripGeometry(track, hw - 0.7, hw - 0.4, 0.025), stripGeometry(track, -hw + 0.7, -hw + 0.4, 0.025)];
     const asphalt = roadMaterial();
-    // Starting grid: staggered white boxes painted on the straight behind the line.
+    // Starting grid: a painted box for each of the sim's grid slots, plus a few empty ones behind.
     const { points, tangents } = track;
-    const n = points.length;
-    const grid = Array.from({ length: 10 }, (_, k) => {
-      const i = (n - 4 - k * 4) % n;
-      const side = k % 2 ? 1 : -1;
-      const t = tangents[i];
-      return { x: points[i].x - t.z * side * 2.6, z: points[i].z + t.x * side * 2.6, rot: Math.atan2(t.x, t.z) };
+    const grid = Array.from({ length: 8 }, (_, k) => {
+      const { index, side } = gridSlot(track, k);
+      const t = tangents[index];
+      return { x: points[index].x - t.z * side * GRID_SIDE, z: points[index].z + t.x * side * GRID_SIDE, rot: Math.atan2(t.x, t.z) };
     });
     return { road: stripGeometry(track, -hw, hw, 0.02), kerbs, lines, asphalt, grid };
   }, [track, hw]);

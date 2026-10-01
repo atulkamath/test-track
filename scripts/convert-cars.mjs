@@ -96,6 +96,9 @@ function isUnder(n, top) {
   );
 }
 
+/** Cars whose windows sit ahead of the middle, so the "glass is at the back" rule would point them backwards. */
+const CABIN_FORWARD = new Set(["sport", "pickup"]);
+
 // --- Pack: ten cars parked in a circle. Give each body its four nearest wheels and work out which way it faces.
 {
   const probe = await io.read(`${packDir}/scene.gltf`);
@@ -124,13 +127,15 @@ function isUnder(n, top) {
       const g = centre(glass).c;
       if ((g[0] - mid[0]) * fwd[0] + (g[2] - mid[1]) * fwd[1] > 0) fwd = [-fwd[0], -fwd[1]];
     }
+    const slug = bodyName.replace(/ body$/i, "").toLowerCase().replace(/\s+/g, "-");
+    // ...except where the cabin is at the front: mid-engined sports cars and pickups (cab forward, bed behind).
+    if (CABIN_FORWARD.has(slug)) fwd = [-fwd[0], -fwd[1]];
     const heading = Math.atan2(fwd[0], fwd[1]); // rotation about y that takes +z to fwd
     const frame = mul(rotY(-heading), translate(-mid[0], -centre(wheels[0].node).min[1], -mid[1]));
     const named = wheels.map((w) => {
       const p = mul(frame, translate(...w.c)).slice(12, 15);
       return { node: w.node, name: `wheel-${p[2] > 0 ? "front" : "back"}-${p[0] > 0 ? "left" : "right"}` };
     });
-    const slug = bodyName.replace(/ body$/i, "").toLowerCase().replace(/\s+/g, "-");
     await build(doc, slug, [body], named, frame, `${outDir}/cars/${slug}.glb`, 1024);
   }
 }

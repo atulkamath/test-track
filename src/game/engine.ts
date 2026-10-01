@@ -1,6 +1,9 @@
 // Browser-side glue: turns wall-clock frames into fixed sim ticks and records inputs.
 import { createSim, DT, HEADING_STEPS, MAX_TICKS, RUN_VERSION, step, stepTraffic, type Run, type Sim, type Track } from "@/sim";
 
+/** Length of the start-light sequence (s). Outside the sim: a replay starts at lights out. */
+export const START_DELAY = 3;
+
 export interface Pose {
   x: number;
   z: number;
@@ -14,6 +17,8 @@ export class Engine {
   private prev: PoseSource = { x: 0, z: 0, heading: 0 };
   private prevBots: PoseSource[] = [];
   private acc = 0;
+  /** Seconds of start lights left; the cars are held on the grid until it reaches zero. */
+  countdown = START_DELAY;
 
   constructor(track: Track) {
     this.sim = createSim(track.seed, track);
@@ -26,11 +31,18 @@ export class Engine {
 
   /** Run as many whole ticks as `seconds` allows, sampling input once per tick. */
   advance(seconds: number, readInput: () => number): void {
+    if (this.countdown > 0) {
+      this.countdown -= seconds;
+      if (this.countdown > 0) return;
+      // Lights out part-way through this frame: race with whatever time is left of it.
+      seconds = -this.countdown;
+      this.countdown = 0;
+    }
     this.acc = Math.min(this.acc + seconds, 0.25);
     while (this.acc >= DT) {
       this.savePrev();
       if (this.finished || this.inputs.length >= MAX_TICKS) {
-        stepTraffic(this.sim); // lap is over: AI keeps driving for show, nothing recorded
+        stepTraffic(this.sim); // race is over: AI keeps driving for show, nothing recorded
       } else {
         const input = readInput();
         this.inputs.push(input);
