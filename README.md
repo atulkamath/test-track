@@ -10,6 +10,12 @@ pnpm replay run.json     # headless replay; prints lap ticks, exits 1 on mismatc
 pnpm tsx scripts/make-fixture.ts [seed] [out]   # autopilot lap -> run.json
 ```
 
+Maps (pick on the start screen, or `?map=sakura` / `?map=circuit`):
+- **Sakura Street** (default): a fixed 1.9 km Japanese street circuit, walls at the kerb, cherry blossom,
+  an old town, a tunnel and a canal. `src/game/streetLayout.ts` dresses it.
+- **Grand Circuit**: an open race circuit with gravel run-off and big grandstands, a new layout each day
+  (`?seed=...` picks one). `src/game/layout.ts` dresses it.
+
 Controls: arrows / WASD, R restart, C cycle camera (chase, far chase, cockpit, roof, bumper, TV), M mute. Touch buttons on phones.
 
 ## Layout

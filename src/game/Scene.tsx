@@ -6,6 +6,7 @@ import * as THREE from "three";
 import { hashString, mulberry32 } from "@/sim/rng";
 import { GRID_SIDE, gridSlot, type Track } from "@/sim";
 import { grassMaterial, roadMaterial } from "./materials";
+import type { TreeSpot } from "./layout";
 import type { HeightFn } from "./terrain";
 
 const KERB_WIDTH = 1.2;
@@ -96,11 +97,13 @@ export function Road({ track }: { track: Track }) {
           ))}
         </group>
       ))}
-      {kerbs.map((g, i) => (
-        <mesh key={i} geometry={g} receiveShadow>
-          <meshStandardMaterial vertexColors roughness={0.8} />
-        </mesh>
-      ))}
+      {/* Kerbs belong to a race circuit; a street runs straight up to its walls. */}
+      {track.kind === "circuit" &&
+        kerbs.map((g, i) => (
+          <mesh key={i} geometry={g} receiveShadow>
+            <meshStandardMaterial vertexColors roughness={0.8} />
+          </mesh>
+        ))}
       {lines.map((g, i) => (
         <mesh key={i} geometry={g} receiveShadow>
           <meshStandardMaterial color="#f4f4f4" roughness={0.8} />
@@ -220,7 +223,18 @@ const MAPLES_URL = "/models/trees/maples.glb";
  * Maple trees (Quaternius, CC0 — see CREDITS.md): five modelled trees with real trunks, branches and leaf
  * clusters, instanced in clumps and tree lines. Most are in summer green, some in autumn red. Scenery only.
  */
-export function Trees({ track, reserved, height }: { track: Track; reserved: { x: number; z: number; r: number }[]; height: HeightFn }) {
+export function Trees({
+  track,
+  reserved,
+  height,
+  spots,
+}: {
+  track: Track;
+  reserved: { x: number; z: number; r: number }[];
+  height: HeightFn;
+  /** Trees a map has placed deliberately (e.g. cherry trees lining a street), on top of the scattered woodland. */
+  spots?: TreeSpot[];
+}) {
   const { scene } = useGLTF(MAPLES_URL);
 
   // Each tree in the file is a trunk mesh and a leaves mesh, laid out in a row. Bring each to its own origin.
@@ -257,7 +271,15 @@ export function Trees({ track, reserved, height }: { track: Track; reserved: { x
     const green = new THREE.TextureLoader().load("/textures/maple_leaves_green.webp");
     green.colorSpace = THREE.SRGBColorSpace;
     green.flipY = false; // glTF texture convention
-    return { bark: bark ?? new THREE.MeshStandardMaterial({ color: "#5e452e" }), green: foliage(green), autumn: foliage(leaf?.map ?? null) };
+    const blossom = new THREE.TextureLoader().load("/textures/sakura_blossom.webp");
+    blossom.colorSpace = THREE.SRGBColorSpace;
+    blossom.flipY = false;
+    return {
+      bark: bark ?? new THREE.MeshStandardMaterial({ color: "#5e452e" }),
+      green: foliage(green),
+      autumn: foliage(leaf?.map ?? null),
+      sakura: foliage(blossom),
+    };
   }, [kinds]);
 
   // Where the trees go: clumps and lines, clear of the road, run-off, barriers and everything built.
@@ -268,9 +290,13 @@ export function Trees({ track, reserved, height }: { track: Track; reserved: { x
     const q = new THREE.Quaternion();
     const up = new THREE.Vector3(0, 1, 0);
     // One list per tree kind and foliage colour.
-    const lists = kinds.map(() => ({ green: [] as THREE.Matrix4[], autumn: [] as THREE.Matrix4[] }));
+    const lists = kinds.map(() => ({ green: [] as THREE.Matrix4[], autumn: [] as THREE.Matrix4[], sakura: [] as THREE.Matrix4[] }));
+    // Where the map has planted cherry trees, the woodland behind is mostly in blossom too.
+    const blossomWoods = spots !== undefined;
     let count = 0;
-    for (let tries = 0; tries < 20000 && count < 1000 && kinds.length > 0; tries++) {
+    // A map that plants its own trees needs less woodland behind them.
+    const scattered = spots ? 450 : 1000;
+    for (let tries = 0; tries < 20000 && count < scattered && kinds.length > 0; tries++) {
       const x = (rand() - 0.5) * 1500;
       const z = (rand() - 0.5) * 1500;
       if (clump(x, z) < 0.35) continue;
@@ -282,11 +308,20 @@ export function Trees({ track, reserved, height }: { track: Track; reserved: { x
       q.setFromAxisAngle(up, rand() * Math.PI * 2);
       const m = new THREE.Matrix4().compose(new THREE.Vector3(x, height(x, z) - 0.15, z), q, new THREE.Vector3(s, s * (0.9 + rand() * 0.2), s));
       // Autumn colour comes in patches, like a stand of maples turning together.
-      (Math.sin(x * 0.011 + 2.3) * Math.sin(z * 0.013 + 0.9) > 0.45 ? lists[k].autumn : lists[k].green).push(m);
+      const patch = Math.sin(x * 0.011 + 2.3) * Math.sin(z * 0.013 + 0.9);
+      (blossomWoods ? (patch > -0.1 ? lists[k].sakura : lists[k].green) : patch > 0.45 ? lists[k].autumn : lists[k].green).push(m);
       count++;
     }
+    // The map's own trees: exact spot and height, a different shape each time.
+    (spots ?? []).forEach((t, i) => {
+      if (kinds.length === 0) return;
+      const k = (i * 7 + 3) % kinds.length;
+      const s = t.height / kinds[k].height;
+      q.setFromAxisAngle(up, i * 2.399);
+      lists[k][t.kind].push(new THREE.Matrix4().compose(new THREE.Vector3(t.x, height(t.x, t.z) - 0.1, t.z), q, new THREE.Vector3(s, s, s)));
+    });
     return lists;
-  }, [track, reserved, height, kinds]);
+  }, [track, reserved, height, kinds, spots]);
 
   const fill = (mats: THREE.Matrix4[]) => (mesh: THREE.InstancedMesh | null) => {
     if (!mesh) return;
@@ -298,7 +333,7 @@ export function Trees({ track, reserved, height }: { track: Track; reserved: { x
   return (
     <group>
       {kinds.map((kind, k) =>
-        (["green", "autumn"] as const).map((season) => {
+        (["green", "autumn", "sakura"] as const).map((season) => {
           const mats = placed[k]?.[season] ?? [];
           if (mats.length === 0) return null;
           return kind.parts.map((part, i) => (

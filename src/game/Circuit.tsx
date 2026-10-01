@@ -28,6 +28,11 @@ function useMaterials() {
       asphalt: worldMapped(new THREE.MeshStandardMaterial({ map: asphalt.map, roughnessMap: asphalt.roughnessMap, color: "#b9bcc0", roughness: 1 }), 3.5, "asphalt"),
       berm: worldMapped(new THREE.MeshStandardMaterial({ map: pbr("grass").map, color: "#e6f0d8", roughness: 1 }), 3, "berm"),
       marshal: new THREE.MeshStandardMaterial({ color: "#f07a1a", roughness: 0.6 }),
+      // Street circuit: roof tiles, dark timber, white plaster, tunnel strip lights.
+      tile: new THREE.MeshStandardMaterial({ color: "#3a4250", roughness: 0.55, metalness: 0.15 }),
+      wood: new THREE.MeshStandardMaterial({ color: "#4a3324", roughness: 0.85 }),
+      plaster: new THREE.MeshStandardMaterial({ color: "#ece6d8", roughness: 0.95 }),
+      lamp: new THREE.MeshStandardMaterial({ color: "#fff4d6", emissive: "#ffe9b0", emissiveIntensity: 4 }),
     };
     ADS.forEach((_, i) => {
       const map = adTexture(i);

@@ -1,6 +1,7 @@
 // Where the circuit set pieces go. Rendering only: nothing here touches the sim.
 import { cornerSides, GRAVEL_WIDTH, WALL_OFFSET, WALL_OFFSET_CORNER, type Track } from "@/sim";
 import { hashString, mulberry32 } from "@/sim/rng";
+import { buildStreetLayout } from "./streetLayout";
 
 export const KERB = 1.2;
 
@@ -16,6 +17,10 @@ export type BoxKind =
   | "seat"
   | "berm"
   | "marshal"
+  | "tile"
+  | "wood"
+  | "plaster"
+  | "lamp"
   | `ad${number}`;
 
 /** An axis-aligned box in a frame rotated to follow the track. sx = across track, sz = along track. */
@@ -52,7 +57,35 @@ export interface Person {
   scale: number;
 }
 
+/** A model file placed in the world: bottom-centre at (x, y, z), scaled to `height` metres tall. */
+export interface ModelSpot {
+  model: string;
+  x: number;
+  y: number;
+  z: number;
+  rot: number;
+  height: number;
+  /** Optional colour tint (multiplies the model's own colours). */
+  tint?: string;
+}
+
+/** A tree: `kind` picks the foliage. */
+export interface TreeSpot {
+  x: number;
+  z: number;
+  height: number;
+  kind: "sakura" | "green";
+}
+
 export interface Layout {
+  /** Models placed by this map (street circuit only). */
+  models?: ModelSpot[];
+  /** Trees placed by this map; when present they replace the scattered woodland. */
+  trees?: TreeSpot[];
+  /** Tunnel sections: runs of track samples roofed over. */
+  tunnels?: { from: number; to: number }[];
+  /** Water channels beside the track: the near and far bank as matching runs of points. */
+  canals?: { near: { x: number; z: number }[]; far: { x: number; z: number }[] }[];
   boxes: Box[];
   people: Person[];
   /** Trackside TV camera positions (top of each camera tower). */
@@ -76,7 +109,7 @@ export interface Layout {
   reserved: { x: number; z: number; r: number }[];
 }
 
-interface Frame {
+export interface Frame {
   x: number;
   z: number;
   tx: number;
@@ -84,7 +117,7 @@ interface Frame {
   rot: number;
 }
 
-function frame(track: Track, i: number): Frame {
+export function frame(track: Track, i: number): Frame {
   const n = track.points.length;
   const k = ((i % n) + n) % n;
   const p = track.points[k];
@@ -93,7 +126,7 @@ function frame(track: Track, i: number): Frame {
 }
 
 /** Point `off` to the right of the centreline (negative = left), `along` metres down the track. */
-function at(f: Frame, off: number, along = 0) {
+export function at(f: Frame, off: number, along = 0) {
   return { x: f.x - f.tz * off + f.tx * along, z: f.z + f.tx * off + f.tz * along };
 }
 
@@ -115,7 +148,12 @@ function turnAt(track: Track, i: number): number {
   return a.x * b.z - a.z * b.x;
 }
 
-export function buildLayout(track: Track): Layout {
+/**
+ * The shared toolkit for dressing a track: boxes, spectators, grandstands. Used by every map's layout.
+ * Positions are given relative to a track sample: `off` metres to the right of the centreline (negative = left)
+ * and `along` metres down the track.
+ */
+export function createBuilder(track: Track) {
   const hw = track.halfWidth;
   const n = track.points.length;
   const boxes: Box[] = [];
@@ -123,7 +161,6 @@ export function buildLayout(track: Track): Layout {
   const rand = mulberry32(hashString(track.seed + ":crowd"));
   const flags: Spot[] = [];
   const reserved: Layout["reserved"] = [];
-  const cornerSide = cornerSides(track);
 
   const isReserved = (x: number, z: number, pad: number) =>
     reserved.some((r) => (r.x - x) ** 2 + (r.z - z) ** 2 < (r.r + pad) ** 2);
@@ -139,9 +176,6 @@ export function buildLayout(track: Track): Layout {
     boxes.push({ x: p.x, y, z: p.z, rot: f.rot, sx, sy, sz, kind, tilt });
   };
   const tvSpots: Layout["tvSpots"] = [];
-  const tents: Spot[] = [];
-  const parked: Spot[] = [];
-  const trucks: Spot[] = [];
 
   /** Facing the track from side s: turn local +z toward the centreline. */
   const faceTrack = (f: Frame, s: number) => Math.atan2(s * f.tz, -s * f.tx);
@@ -194,9 +228,20 @@ export function buildLayout(track: Track): Layout {
     reserved.push({ ...at(f, s * (base + (tiers * depth) / 2)), r: tiers * depth + 6 });
   };
 
-  // --- Start straight: main grandstand on one side, pits on the other. ---
   const SEG = 3; // samples per segment (6 m)
   const segLen = (track.length / n) * SEG + 0.15;
+  return { hw, n, boxes, people, rand, flags, reserved, tvSpots, isReserved, fits, add, faceTrack, person, standingCrowd, grandstand, SEG, segLen };
+}
+
+export function buildLayout(track: Track): Layout {
+  if (track.kind === "street") return buildStreetLayout(track);
+  const { hw, n, boxes, people, rand, flags, reserved, tvSpots, isReserved, fits, add, person, standingCrowd, grandstand, SEG, segLen } = createBuilder(track);
+  const cornerSide = cornerSides(track);
+  const tents: Spot[] = [];
+  const parked: Spot[] = [];
+  const trucks: Spot[] = [];
+
+  // --- Start straight: main grandstand on one side, pits on the other. ---
   const gBase = hw + KERB + 7;
   const pitFrom = WALL_OFFSET; // the pit wall is the lap-long barrier
   const countFits = (s: number, far: number) => {

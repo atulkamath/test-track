@@ -1,6 +1,6 @@
 # Credits
 
-Everything here is free for commercial use. **The two car models are CC-BY 4.0, so these credits must ship with the game.**
+Everything here is free for commercial use. **The car models (CC-BY 4.0) and three street-circuit models (CC-BY 3.0) require credit, so this file must ship with the game.**
 
 ## Car models (CC-BY 4.0 — credit required)
 
@@ -29,11 +29,25 @@ shadow plane removed, textures resized and converted to WebP.
 - Crowd and drivers: "Animated Human" by Quaternius — https://poly.pizza/m/c3Ibh9I3udk -> `public/models/people/man.glb`
   (simplified to 662 triangles by `scripts/convert-person.mjs`; posed and coloured in code)
 
+## Sakura Street scenery (Poly Pizza, unmodified files in `public/models/jp/`)
+
+CC-BY 3.0 (http://creativecommons.org/licenses/by/3.0/) — credit required:
+- "Pagoda" by Poly by Google — https://poly.pizza/m/1zS7ucaAd4J -> `pagoda.glb`
+- "Japanese Stone Lamp" by Flopsi — https://poly.pizza/m/5gZfOZIW92k -> `stonelamp.glb`
+- "red lantern" by Sophie Kim — https://poly.pizza/m/7PZhxLFiGc2 -> `redlantern.glb`
+
+CC0 (public domain), all by Quaternius:
+- "Torii Gate" https://poly.pizza/m/7SyXZ62xR5 (tinted vermilion in the game) -> `torii.glb`
+- "Shoji Wall" https://poly.pizza/m/YQu7UD8YIS, "Normal Wall" https://poly.pizza/m/Jrc0L53QYY,
+  "Red Wood Wall" https://poly.pizza/m/fCt0206mzB, "Japanese Door" https://poly.pizza/m/t4otyljz8K (townhouse fronts)
+- "Bamboo" https://poly.pizza/m/xBPj13w3JQ -> `bamboo.glb`
+- "Sushi Truck" https://poly.pizza/m/OgrROxABGT -> `sushitruck.glb`
+
 ## Trees (CC0 — public domain, no credit required)
 
 - "Maple Trees" by Quaternius — https://poly.pizza/m/iGFtQd0PJO -> `public/models/trees/maples.glb`
   (simplified by `scripts/convert-trees.mjs`; `public/textures/maple_leaves_green.webp` is its leaf texture
-  hue-shifted from autumn orange to green)
+  hue-shifted from autumn orange to green; `public/textures/sakura_blossom.webp` is the same texture in cherry-blossom pink)
 
 ## Libraries
 three, @react-three/fiber, @react-three/drei, @react-three/postprocessing: MIT. postprocessing: Zlib. n8ao (ambient occlusion): ISC.

@@ -6,7 +6,7 @@ import { Bloom, EffectComposer, HueSaturation, N8AO, SMAA, ToneMapping, Vignette
 import { ToneMappingMode } from "postprocessing";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
-import { COS, DOWN, LAPS, LEFT, RIGHT, SIN, UP, generateTrack, racePosition, type Track } from "@/sim";
+import { COS, DOWN, LAPS, LEFT, RIGHT, SIN, STREET_SEED, UP, generateTrack, racePosition, type Track } from "@/sim";
 import { Sound, type OtherCar } from "./audio";
 import { CameraRig, VIEWS } from "./camera";
 import { animateCar, Car, newCarAnim, PLAYER_MODEL } from "./Car";
@@ -21,6 +21,7 @@ import { Tacho, type TachoHandle } from "./Tacho";
 import { Pylons, Ridges, Town } from "./Background";
 import { CarPark, CircuitBoxes, FerrisWheel, Flags, GravelTraps, Tents, TimingTower } from "./Circuit";
 import { buildLayout, type Layout } from "./layout";
+import { Canals, Models, Pavements, Petals } from "./Street";
 import { makeHeight } from "./terrain";
 import { Billboards } from "./Trackside";
 import styles from "./game.module.css";
@@ -37,12 +38,22 @@ const KEY_BITS: Record<string, number> = {
   KeyD: RIGHT,
 };
 
-function todaySeed(): string {
-  const fromUrl = new URLSearchParams(window.location.search).get("seed");
-  if (fromUrl) return fromUrl;
+/** The maps on offer. `seed` is what the sim builds the track from. */
+const MAPS = [
+  { id: "sakura", name: "Sakura Street", blurb: "Japanese street circuit" },
+  { id: "circuit", name: "Grand Circuit", blurb: "Open race circuit, new layout daily" },
+] as const;
+type MapId = (typeof MAPS)[number]["id"];
+
+/** Which map to load: `?map=circuit` or `?map=sakura` (default). `?seed=...` forces a particular circuit layout. */
+function chosenMap(): { id: MapId; seed: string } {
+  const params = new URLSearchParams(window.location.search);
+  const seed = params.get("seed");
+  if (seed) return { id: "circuit", seed };
+  if (params.get("map") !== "circuit") return { id: "sakura", seed: STREET_SEED };
   const d = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return { id: "circuit", seed: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` };
 }
 
 /** Gear + rpm to show: neutral at idle until the run starts. */
@@ -240,6 +251,7 @@ const HORIZON = new THREE.Color().setRGB(0.45, 0.48, 0.59, THREE.LinearSRGBColor
 
 function World({ track, layout }: { track: Track; layout: Layout }) {
   const height = useMemo(() => makeHeight(track, layout), [track, layout]);
+  const street = track.kind === "street";
   return (
     <>
       <Suspense fallback={<color attach="background" args={["#9fb4cc"]} />}>
@@ -249,26 +261,41 @@ function World({ track, layout }: { track: Track; layout: Layout }) {
       <Ground height={height} />
       <Ridges track={track} />
       <Town track={track} height={height} />
-      <Pylons track={track} height={height} />
-      <RunOff track={track} />
       <Road track={track} />
-      <GravelTraps track={track} layout={layout} />
       <FinishLine track={track} />
       <CircuitBoxes layout={layout} />
       <TimingTower layout={layout} seed={track.seed} />
       <Flags layout={layout} />
-      <FerrisWheel layout={layout} />
-      <Billboards track={track} layout={layout} />
-      <GatePosts track={track} />
-      <Tents layout={layout} />
-      <Suspense fallback={null}>
-        <CarPark layout={layout} />
-      </Suspense>
-      <Paddock layout={layout} />
-      <Lake layout={layout} />
       <Blimp track={track} />
+      {street ? (
+        <>
+          {/* Street circuit: pavements to the walls, the canal, placed models, petals on the wind. */}
+          <Pavements track={track} />
+          <Canals layout={layout} />
+          <Suspense fallback={null}>
+            <Models layout={layout} />
+          </Suspense>
+          <Petals />
+        </>
+      ) : (
+        <>
+          {/* Race circuit: run-off, gravel, checkpoint posts, paddock, car park, lake, Ferris wheel. */}
+          <Pylons track={track} height={height} />
+          <RunOff track={track} />
+          <GravelTraps track={track} layout={layout} />
+          <FerrisWheel layout={layout} />
+          <Billboards track={track} layout={layout} />
+          <GatePosts track={track} />
+          <Tents layout={layout} />
+          <Suspense fallback={null}>
+            <CarPark layout={layout} />
+          </Suspense>
+          <Paddock layout={layout} />
+          <Lake layout={layout} />
+        </>
+      )}
       <Suspense fallback={null}>
-        <Trees track={track} reserved={layout.reserved} height={height} />
+        <Trees track={track} reserved={layout.reserved} height={height} spots={layout.trees} />
       </Suspense>
     </>
   );
@@ -291,7 +318,8 @@ function Effects({ ao }: { ao: boolean }) {
 }
 
 export default function Game() {
-  const track = useMemo(() => generateTrack(todaySeed()), []);
+  const map = useMemo(() => chosenMap(), []);
+  const track = useMemo(() => generateTrack(map.seed), [map]);
   const layout = useMemo(() => buildLayout(track), [track]);
   const skids = useRef<SkidHandle>(null);
   const gears = useMemo(() => new Gearbox(), []);
@@ -443,7 +471,7 @@ export default function Game() {
             --.---
           </div>
         </div>
-        <div className={styles.seed}>{track.seed}</div>
+        <div className={styles.seed}>{MAPS.find((m) => m.id === map.id)?.name}{map.id === "circuit" ? ` · ${track.seed}` : ""}</div>
       </div>
       <div className={styles.race}>
         <div className={styles.box}>
@@ -467,7 +495,19 @@ export default function Game() {
         Off road
       </div>
 
-      {!started && lapTicks === null && <div className={styles.hint}>Press ↑ / W to start · C camera · M sound</div>}
+      {!started && lapTicks === null && (
+        <>
+          <div className={styles.maps}>
+            {MAPS.map((m) => (
+              <a key={m.id} href={`?map=${m.id}`} className={m.id === map.id ? styles.mapOn : styles.map}>
+                <strong>{m.name}</strong>
+                <span>{m.blurb}</span>
+              </a>
+            ))}
+          </div>
+          <div className={styles.hint}>Press ↑ / W to start · C camera · M sound</div>
+        </>
+      )}
       {viewName && <div className={styles.toast}>{viewName}</div>}
       <div className={styles.status}>
         <button onClick={cycleView} aria-label="Change camera">

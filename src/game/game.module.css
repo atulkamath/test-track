@@ -340,3 +340,52 @@
   line-height: 1;
   color: #f2c230;
 }
+
+/* Map picker on the start screen. */
+.maps {
+  position: absolute;
+  bottom: 27%;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 12px;
+  font-family: var(--font-exo), system-ui, sans-serif;
+}
+
+.map,
+.mapOn {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 210px;
+  padding: 10px 16px;
+  border-left: 4px solid rgba(255, 255, 255, 0.35);
+  background: rgba(8, 10, 16, 0.62);
+  color: #fff;
+  text-decoration: none;
+  transform: skewX(-10deg);
+}
+
+.mapOn {
+  border-left-color: #f2c230;
+  background: rgba(8, 10, 16, 0.82);
+}
+
+.map strong,
+.mapOn strong {
+  font-style: italic;
+  font-weight: 800;
+  font-size: 19px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.mapOn strong {
+  color: #f2c230;
+}
+
+.map span,
+.mapOn span {
+  font-size: 12px;
+  opacity: 0.8;
+}
