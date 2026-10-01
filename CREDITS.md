@@ -24,10 +24,15 @@ shadow plane removed, textures resized and converted to WebP.
 - Concrete: "Concrete Wall 008", Poly Haven — https://polyhaven.com/a/concrete_wall_008 -> `public/textures/concrete_*.jpg`
 - Grass: "Grass 001", ambientCG — https://ambientcg.com/a/Grass001 -> `public/textures/grass_*.jpg`
 
+## People (CC0 — public domain, no credit required)
+
+- Crowd and drivers: "Animated Human" by Quaternius — https://poly.pizza/m/c3Ibh9I3udk -> `public/models/people/man.glb`
+  (simplified to 662 triangles by `scripts/convert-person.mjs`; posed and coloured in code)
+
 ## Libraries
 three, @react-three/fiber, @react-three/drei, @react-three/postprocessing: MIT. postprocessing: Zlib. n8ao (ambient occlusion): ISC.
 HUD font: Exo 2 (SIL Open Font License), via next/font/google.
 
 ## Made in code
-Track, grandstands, spectators, trees, town, pylons, helicopter, blimp, cockpit, banners and all sound are generated in code.
+Track, grandstands, distant spectators, trees, town, pylons, helicopter, blimp, cockpit wheel/hands/gauges, banners and all sound are generated in code.
 Sponsor names are invented.

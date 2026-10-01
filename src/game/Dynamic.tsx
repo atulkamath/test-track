@@ -33,7 +33,7 @@ export function Traffic({ engine, skids }: { engine: Engine; skids: React.RefObj
   return (
     <Suspense fallback={null}>
       {Array.from({ length: count }, (_, k) => (
-        <Car key={k} model={BOT_MODELS[k % BOT_MODELS.length]} ref={(g) => void (refs.current[k] = g)} />
+        <Car key={k} model={BOT_MODELS[k % BOT_MODELS.length]} variant={k + 1} ref={(g) => void (refs.current[k] = g)} />
       ))}
     </Suspense>
   );

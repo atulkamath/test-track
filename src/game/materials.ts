@@ -80,10 +80,78 @@ export function grassMaterial() {
         diffuseColor *= mix(gA, gB, 0.45);
         // Mowed stripes ~6 m wide, fading out with distance from the camera.
         float stripe = smoothstep(-0.15, 0.15, sin((vWPos.x * 0.8 + vWPos.z * 0.6) * 0.52));
-        float patch = 0.5 + 0.5 * sin(vWPos.x * 0.021 + 1.3) * sin(vWPos.z * 0.017 + 0.4);
-        diffuseColor.rgb *= (0.88 + 0.16 * stripe) * (0.86 + 0.22 * patch);`,
+        float tone = 0.5 + 0.5 * sin(vWPos.x * 0.021 + 1.3) * sin(vWPos.z * 0.017 + 0.4);
+        diffuseColor.rgb *= (0.88 + 0.16 * stripe) * (0.86 + 0.22 * tone);`,
       );
   };
   m.customProgramCacheKey = () => "grass-ground";
+  return m;
+}
+
+/**
+ * Race-track asphalt. On top of the scanned texture: a dark rubbered-in racing line that wanders across the
+ * road, dusty lighter edges, a tar seam down the middle where two paving passes meet, darker resurfaced
+ * patches, and slow tone variation so no two stretches look the same.
+ * Expects road UVs: u = 0..1 across the width, v = distance along the track in road-widths.
+ */
+export function roadMaterial() {
+  const maps = pbr("asphalt", 4);
+  const m = new THREE.MeshStandardMaterial({ ...maps, roughness: 1, normalScale: new THREE.Vector2(0.9, 0.9) });
+  m.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace("#include <common>", "#include <common>\nvarying vec2 vRoadUv;\nvarying vec3 vWPos;")
+      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvRoadUv = uv;\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;");
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        "#include <common>",
+        /* glsl */ `#include <common>
+        varying vec2 vRoadUv;
+        varying vec3 vWPos;
+        float rhash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        float rnoise(vec2 p) {
+          vec2 i = floor(p), f = fract(p);
+          f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(rhash(i), rhash(i + vec2(1.0, 0.0)), f.x), mix(rhash(i + vec2(0.0, 1.0)), rhash(i + vec2(1.0, 1.0)), f.x), f.y);
+        }`,
+      )
+      .replace(
+        "#include <map_fragment>",
+        /* glsl */ `
+        // Two scales of the scan so the tiling doesn't show.
+        vec4 fine = texture2D(map, vMapUv);
+        vec4 broad = texture2D(map, vMapUv * 0.23 + 0.31);
+        diffuseColor *= mix(fine, broad, 0.4);
+        float u = vRoadUv.x;
+        float along = vRoadUv.y;
+        // Slow tone drift plus darker resurfaced patches.
+        float toneVar = rnoise(vWPos.xz * 0.035);
+        float patchy = smoothstep(0.62, 0.7, rnoise(vec2(floor(along * 0.35), 3.0))) * step(0.5, fract(along * 0.35 + 0.2));
+        diffuseColor.rgb *= 0.86 + 0.24 * toneVar - 0.1 * patchy;
+        // Rubbered-in racing line: a dark band that drifts from side to side, streaky along the direction of travel.
+        float centre = 0.5 + 0.2 * sin(along * 0.42) + 0.06 * sin(along * 1.3 + 1.0);
+        float line = exp(-pow((u - centre) / 0.15, 2.0));
+        float streak = 0.75 + 0.25 * rnoise(vec2(u * 60.0, along * 0.6));
+        diffuseColor.rgb *= 1.0 - 0.3 * line * streak;
+        // Dusty, sun-bleached edges where nobody drives.
+        float edge = smoothstep(0.34, 0.5, abs(u - 0.5));
+        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 1.22 + 0.015, edge * 0.6);
+        // Tar seam down the centre joint.
+        float seam = 1.0 - smoothstep(0.0, 0.004, abs(u - 0.5 + 0.003 * sin(along * 9.0)));
+        diffuseColor.rgb *= 1.0 - 0.35 * seam;`,
+      )
+      .replace(
+        "#include <roughnessmap_fragment>",
+        /* glsl */ `float roughnessFactor = roughness;
+        #ifdef USE_ROUGHNESSMAP
+          roughnessFactor *= texture2D(roughnessMap, vRoughnessMapUv).g;
+        #endif
+        // Laid rubber is smoother and slightly shinier than the surrounding stone.
+        {
+          float c2 = 0.5 + 0.2 * sin(vRoadUv.y * 0.42) + 0.06 * sin(vRoadUv.y * 1.3 + 1.0);
+          roughnessFactor *= 1.0 - 0.22 * exp(-pow((vRoadUv.x - c2) / 0.15, 2.0));
+        }`,
+      );
+  };
+  m.customProgramCacheKey = () => "road-asphalt";
   return m;
 }

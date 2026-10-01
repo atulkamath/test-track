@@ -2,13 +2,15 @@
 
 // Thousands of low-poly spectators, animated entirely on the GPU: they idle, clap, wave, cheer and jump,
 // get louder as the car comes past, and turn their heads to follow it. Rendering only.
+import { useGLTF } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
-import { useLayoutEffect, useMemo, useRef } from "react";
+import { Suspense, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { hashString, mulberry32 } from "@/sim/rng";
 import type { Engine } from "./engine";
 import type { Person } from "./layout";
+import { getPoses, MAN_URL, type Baked } from "./people";
 
 // Body parts, encoded per vertex so the shader knows what to move and how to colour it.
 const LEGS = 0;
@@ -130,10 +132,98 @@ function makeMaterial(seated: boolean, uniforms: { uTime: { value: number }; uCa
   return m;
 }
 
-function CrowdGroup({ people, seated, material, seed }: { people: Person[]; seated: boolean; material: THREE.Material; seed: string }) {
+/**
+ * Material for the real human model. Same per-person colours and excitement as the simple figures, but the
+ * arms are animated by blending between two baked poses (relaxed -> arms up) instead of rotating boxes.
+ * Part codes: 0 trousers, 1 shirt, 2 arm skin, 3 head, 5 hair, 6 shoes.
+ */
+function makeHumanMaterial(seated: boolean, neck: THREE.Vector3, uniforms: { uTime: { value: number }; uCar: { value: THREE.Vector3 } }) {
+  const m = new THREE.MeshStandardMaterial({ roughness: 0.8 });
+  const v3 = (v: THREE.Vector3) => `vec3(${v.x.toFixed(3)}, ${v.y.toFixed(3)}, ${v.z.toFixed(3)})`;
+  m.onBeforeCompile = (shader) => {
+    shader.uniforms.uTime = uniforms.uTime;
+    shader.uniforms.uCar = uniforms.uCar;
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        "#include <common>",
+        /* glsl */ `#include <common>
+        attribute float part;
+        attribute vec3 aPosB;
+        attribute vec3 aShirt;
+        attribute vec3 aPants;
+        attribute vec3 aSkin;
+        attribute vec3 aHair;
+        attribute vec3 aAnim; // phase, action, mood
+        uniform float uTime;
+        uniform vec3 uCar;
+        varying vec3 vCrowdColor;
+        mat2 rot2(float a) { float c = cos(a), s = sin(a); return mat2(c, s, -s, c); }`,
+      )
+      .replace(
+        "#include <begin_vertex>",
+        /* glsl */ `#include <begin_vertex>
+        {
+          float t = uTime + aAnim.x * 17.0;
+          float action = aAnim.y;
+          vec3 origin = (instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+          float dist = distance(origin.xz, uCar.xz);
+          float excite = 1.0 - smoothstep(12.0, 90.0, dist);
+          float energy = clamp(aAnim.z * 0.35 + excite, 0.0, 1.0);
+
+          // How far the arms are raised (0 = relaxed pose, 1 = arms-up pose).
+          float raise = 0.0;
+          if (action > 0.5 && action < 1.5) raise = 0.4 * energy * (0.5 + 0.5 * sin(t * 14.0));      // clap-ish pumping
+          else if (action > 1.5 && action < 2.5) raise = max(energy, 0.2) * (0.75 + 0.25 * sin(t * 7.0)); // wave
+          else if (action > 2.5) raise = energy * (0.85 + 0.15 * sin(t * 9.0));                         // cheer / jump
+          transformed = mix(position, aPosB, raise);
+
+          if (part > 2.5 && part < 5.5) {
+            // Head and hair turn toward the car when it's close enough to notice.
+            vec3 local = (inverse(instanceMatrix) * vec4(uCar, 1.0)).xyz;
+            float yaw = clamp(atan(local.x, local.z), -1.2, 1.2) * (1.0 - smoothstep(30.0, 160.0, dist));
+            vec3 neck = ${v3(neck)};
+            vec3 h = transformed - neck;
+            vec2 zx = rot2(yaw) * vec2(h.z, h.x);
+            transformed = vec3(zx.y, h.y, zx.x) + neck;
+          }
+
+          transformed.x += sin(t * 0.8) * 0.02 * transformed.y;
+          transformed.y += energy * 0.04 * abs(sin(t * 5.0));
+          ${seated ? "" : "if (action > 3.5) transformed.y += energy * 0.3 * max(0.0, sin(t * 6.0));"}
+
+          vCrowdColor = part < 0.5 ? aPants : part < 1.5 ? aShirt : part < 3.5 ? aSkin : part < 5.5 ? aHair : vec3(0.03);
+        }`,
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace("#include <common>", "#include <common>\nvarying vec3 vCrowdColor;")
+      .replace("#include <color_fragment>", "#include <color_fragment>\ndiffuseColor.rgb = vCrowdColor;");
+  };
+  m.customProgramCacheKey = () => `crowd-human-${seated ? "seated" : "standing"}`;
+  return m;
+}
+
+/** Fans closer than this to the camera use the real human model; further away, the cheap figures. */
+const NEAR = 190;
+
+function CrowdGroup({
+  people,
+  base,
+  material,
+  seed,
+  lod,
+  humansReady,
+}: {
+  people: Person[];
+  /** Geometry to instance: the simple figure, or a baked human pose. */
+  base: THREE.BufferGeometry;
+  material: THREE.Material;
+  seed: string;
+  lod: "near" | "far";
+  humansReady: boolean;
+}) {
   const mesh = useRef<THREE.InstancedMesh>(null);
   const geometry = useMemo(() => {
-    const g = personGeometry(seated);
+    const g = base.clone();
     const rand = mulberry32(hashString(seed));
     const color = new THREE.Color();
     const attr = (palette: string[]) => {
@@ -150,7 +240,12 @@ function CrowdGroup({ people, seated, material, seed }: { people: Person[]; seat
     g.setAttribute("aHair", attr(HAIRS));
     g.setAttribute("aAnim", new THREE.InstancedBufferAttribute(new Float32Array(people.flatMap((p) => [rand(), p.action, p.mood])), 3));
     return g;
-  }, [people, seated, seed]);
+  }, [people, base, seed]);
+  const centre = useMemo(() => {
+    const c = new THREE.Vector3();
+    for (const p of people) c.add(new THREE.Vector3(p.x, p.y, p.z));
+    return c.divideScalar(Math.max(people.length, 1));
+  }, [people]);
 
   useLayoutEffect(() => {
     const m = mesh.current;
@@ -167,6 +262,12 @@ function CrowdGroup({ people, seated, material, seed }: { people: Person[]; seat
     m.computeBoundingSphere();
   }, [people]);
 
+  useFrame(({ camera }) => {
+    if (!mesh.current) return;
+    const near = camera.position.distanceTo(centre) - CELL * 0.5 < NEAR;
+    mesh.current.visible = lod === "near" ? near : !(near && humansReady);
+  });
+
   if (people.length === 0) return null;
   return <instancedMesh ref={mesh} args={[geometry, material, people.length]} receiveShadow />;
 }
@@ -178,12 +279,46 @@ function updateUniforms(u: CrowdUniforms, time: number, x: number, z: number) {
   u.uCar.value.set(x, 0, z);
 }
 
-/** Crowd is split into grid cells so each cell can be frustum-culled on its own. */
+/** Crowd is split into grid cells so each cell can be frustum-culled, and switched between detail levels, on its own. */
 const CELL = 150;
+type Chunk = [key: string, people: Person[]];
+
+/** Real human figures for the chunks near the camera. Loads the model, bakes the poses once. */
+function HumanCrowd({ chunks, uniforms, onReady }: { chunks: Chunk[]; uniforms: CrowdUniforms; onReady: () => void }) {
+  const gltf = useGLTF(MAN_URL);
+  const kit = useMemo(() => {
+    const poses = getPoses(gltf.scene, gltf.animations[0]);
+    const withCheer = (a: Baked, b: Baked) => {
+      const g = a.geometry.clone();
+      g.setAttribute("aPosB", b.geometry.getAttribute("position").clone());
+      return g;
+    };
+    return {
+      standing: { geometry: withCheer(poses.stand, poses.standCheer), material: makeHumanMaterial(false, poses.stand.neck, uniforms) },
+      seated: { geometry: withCheer(poses.sit, poses.sitCheer), material: makeHumanMaterial(true, poses.sit.neck, uniforms) },
+    };
+  }, [gltf, uniforms]);
+  useLayoutEffect(() => onReady(), [onReady]);
+  return (
+    <>
+      {chunks.map(([key, list]) => {
+        const k = key.endsWith(",1") ? kit.seated : kit.standing;
+        return <CrowdGroup key={key} people={list} base={k.geometry} material={k.material} seed={key} lod="near" humansReady />;
+      })}
+    </>
+  );
+}
 
 export function Crowd({ people, engine }: { people: Person[]; engine: Engine }) {
   const uniforms = useMemo(() => ({ uTime: { value: 0 }, uCar: { value: new THREE.Vector3() } }), []);
-  const materials = useMemo(() => ({ seated: makeMaterial(true, uniforms), standing: makeMaterial(false, uniforms) }), [uniforms]);
+  const simple = useMemo(
+    () => ({
+      seated: { geometry: personGeometry(true), material: makeMaterial(true, uniforms) },
+      standing: { geometry: personGeometry(false), material: makeMaterial(false, uniforms) },
+    }),
+    [uniforms],
+  );
+  const [humansReady, setHumansReady] = useState(false);
   const chunks = useMemo(() => {
     const map = new Map<string, Person[]>();
     for (const p of people) {
@@ -192,18 +327,24 @@ export function Crowd({ people, engine }: { people: Person[]; engine: Engine }) 
       if (list) list.push(p);
       else map.set(key, [p]);
     }
-    return [...map.entries()];
+    return [...map.entries()] as Chunk[];
   }, [people]);
   useFrame(({ clock }) => {
     const p = engine.pose();
     updateUniforms(uniforms, clock.elapsedTime, p.x, p.z);
   });
+  const ready = useCallback(() => setHumansReady(true), []);
   return (
     <group>
       {chunks.map(([key, list]) => {
-        const seated = key.endsWith(",1");
-        return <CrowdGroup key={key} people={list} seated={seated} seed={key} material={seated ? materials.seated : materials.standing} />;
+        const k = key.endsWith(",1") ? simple.seated : simple.standing;
+        return <CrowdGroup key={key} people={list} base={k.geometry} material={k.material} seed={key} lod="far" humansReady={humansReady} />;
       })}
+      <Suspense fallback={null}>
+        <HumanCrowd chunks={chunks} uniforms={uniforms} onReady={ready} />
+      </Suspense>
     </group>
   );
 }
+
+useGLTF.preload(MAN_URL);

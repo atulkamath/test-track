@@ -1,24 +1,26 @@
 "use client";
 
-// Car interior for the cockpit view: dash with live digital gauges, a steering wheel that turns with your
-// input, gloved hands, and an H-pattern lever your right hand reaches for on every gear change.
-// Coordinates are in the car's local frame (metres): +z forward, +x left, y up. Driver sits on the left.
-// Everything below the eye line is kept low so the road is visible from ~5 m ahead.
+// The moving parts of the cockpit view. The cabin itself (dash, doors, pillars, roof, bonnet) is the car model's
+// own interior; this adds what has to animate: a steering wheel that follows your input, gloved hands and arms,
+// a live gauge display, and a raised H-pattern shifter the right hand reaches for on every gear change.
+// Positions are in the car's local frame (metres): +z forward, +x left, y up, and were measured from the
+// Azura model: its steering wheel is centred at (0.30, 0.81, 0.27), cabin roof at ~1.12, left-hand drive.
 import { forwardRef, useImperativeHandle, useMemo, useRef } from "react";
 import * as THREE from "three";
 
-export const EYE = new THREE.Vector3(0.38, 1.27, -0.2);
-const WHEEL_POS = new THREE.Vector3(0.38, 0.9, 0.22);
-const WHEEL_TILT = 0.5;
-const RIM = 0.165;
-/** Raised rally-style shifter beside the wheel, so it sits inside the cockpit camera's view (~30° down, bottom right). */
-const LEVER_PIVOT = new THREE.Vector3(-0.02, 0.8, 0.3);
-const LEVER_LEN = 0.16;
-const SHOULDER_L = new THREE.Vector3(0.6, 1.06, -0.3);
-const SHOULDER_R = new THREE.Vector3(0.16, 1.06, -0.3);
+/** Driver's eye: as high as the roof allows, just ahead of the headrest. */
+export const EYE = new THREE.Vector3(0.31, 1.05, -0.2);
+/** Sits a touch nearer the driver than the model's static wheel, so this one is what you see. */
+const WHEEL_POS = new THREE.Vector3(0.3, 0.81, 0.24);
+const WHEEL_TILT = 0.42;
+const RIM = 0.16;
+/** Raised shifter between the seats, inside the camera's view (bottom right). */
+const LEVER_PIVOT = new THREE.Vector3(0.0, 0.74, 0.12);
+const LEVER_LEN = 0.15;
+const SHOULDER_L = new THREE.Vector3(0.5, 0.88, -0.24);
+const SHOULDER_R = new THREE.Vector3(0.13, 0.88, -0.24);
 /** How long the hand spends reaching for the lever and back (seconds). */
 const SHIFT_TIME = 0.65;
-const PAINT = "#dcbf10"; // matches the Azura's yellow
 const SUIT = "#b3261e";
 const GLOVE = "#23272e";
 
@@ -195,67 +197,16 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
   }));
 
   const trim = <meshStandardMaterial color="#1b1d21" roughness={0.8} />;
-  const pillar = (a: [number, number, number], b: [number, number, number]) => {
-    const m = new THREE.Object3D();
-    span(m, new THREE.Vector3(...a), new THREE.Vector3(...b));
-    return (
-      <mesh position={m.position} quaternion={m.quaternion} scale={[1, m.scale.y, 1]}>
-        <cylinderGeometry args={[0.04, 0.055, 1, 8]} />
-        {trim}
-      </mesh>
-    );
-  };
-
   return (
     <group ref={root}>
-      {/* The car's own bonnet, seen over the dash */}
-      <mesh position={[0, 0.9, 1.35]} rotation={[-0.08, 0, 0]}>
-        <boxGeometry args={[1.75, 0.06, 1.25]} />
-        <meshPhysicalMaterial color={PAINT} metalness={0.25} roughness={0.3} clearcoat={1} clearcoatRoughness={0.06} />
-      </mesh>
-      {/* Dashboard (top at ~0.94), small gauge cowl and the live display */}
-      <mesh position={[0, 0.84, 0.64]}>
-        <boxGeometry args={[1.7, 0.2, 0.55]} />
-        <meshStandardMaterial color="#15171b" roughness={0.9} />
-      </mesh>
-      <mesh position={[0.38, 0.975, 0.5]}>
-        <boxGeometry args={[0.42, 0.04, 0.2]} />
-        {trim}
-      </mesh>
-      <mesh position={[0.38, 0.925, 0.4]} rotation={[0.45, Math.PI, 0]}>
-        <planeGeometry args={[0.3, 0.13]} />
+      {/* Live gauge display, perched above the steering column */}
+      <mesh position={[0.3, 0.925, 0.33]} rotation={[0.35, Math.PI, 0]}>
+        <planeGeometry args={[0.2, 0.088]} />
         <meshBasicMaterial map={dash.texture} toneMapped={false} />
       </mesh>
-      {/* Centre console, doors, header, roof lining, A-pillars, mirror */}
-      <mesh position={[-0.02, 0.54, 0.05]}>
-        <boxGeometry args={[0.26, 0.32, 0.8]} />
+      <mesh position={[0.3, 0.925, 0.345]} rotation={[0.35, Math.PI, 0]}>
+        <boxGeometry args={[0.22, 0.105, 0.02]} />
         {trim}
-      </mesh>
-      {[0.84, -0.84].map((x) => (
-        <group key={x}>
-          <mesh position={[x, 0.78, -0.25]}>
-            <boxGeometry args={[0.06, 0.5, 1.5]} />
-            <meshStandardMaterial color="#26292f" roughness={0.85} />
-          </mesh>
-          <mesh position={[x * 0.97, 1.04, -0.25]}>
-            <boxGeometry args={[0.12, 0.05, 1.5]} />
-            <meshStandardMaterial color="#8a1d1d" roughness={0.6} />
-          </mesh>
-        </group>
-      ))}
-      <mesh position={[0, 1.62, 0.12]}>
-        <boxGeometry args={[1.5, 0.07, 0.08]} />
-        {trim}
-      </mesh>
-      <mesh position={[0, 1.68, -0.4]}>
-        <boxGeometry args={[1.5, 0.04, 1.0]} />
-        <meshStandardMaterial color="#2b2e33" roughness={0.95} />
-      </mesh>
-      {pillar([0.8, 0.96, 0.7], [0.64, 1.64, 0.1])}
-      {pillar([-0.8, 0.96, 0.7], [-0.64, 1.64, 0.1])}
-      <mesh position={[0.02, 1.55, 0.14]}>
-        <boxGeometry args={[0.24, 0.06, 0.03]} />
-        <meshStandardMaterial color="#9aa6b2" metalness={0.9} roughness={0.1} />
       </mesh>
 
       {/* Steering wheel, tilted toward the driver; the left hand is fixed on the rim at 9 o'clock */}
@@ -308,12 +259,12 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
       <Limb limbRef={lowerR} radius={0.042} />
 
       {/* Raised shifter tower rising from the console, with the H-gate plate on top */}
-      <mesh position={[-0.02, 0.73, 0.28]}>
-        <boxGeometry args={[0.15, 0.14, 0.2]} />
+      <mesh position={[LEVER_PIVOT.x, LEVER_PIVOT.y - 0.09, LEVER_PIVOT.z]}>
+        <boxGeometry args={[0.14, 0.18, 0.18]} />
         {trim}
       </mesh>
-      <mesh position={[-0.02, 0.805, 0.3]}>
-        <boxGeometry args={[0.13, 0.012, 0.15]} />
+      <mesh position={[LEVER_PIVOT.x, LEVER_PIVOT.y + 0.004, LEVER_PIVOT.z]}>
+        <boxGeometry args={[0.12, 0.01, 0.14]} />
         <meshStandardMaterial color="#9aa3ad" metalness={0.85} roughness={0.25} />
       </mesh>
       {/* Gear lever */}

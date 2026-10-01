@@ -50,6 +50,21 @@ function gearDisplay(g: Gearbox, started: boolean): [number, number] {
   return started ? [g.gear, g.rpm] : [0, 900];
 }
 
+/** Hide the player's driver figure and thin the window tint while looking out from inside. */
+function setCockpitLook(car: THREE.Object3D, inside: boolean) {
+  if (car.userData.inside === inside) return;
+  const driver = car.getObjectByName("driver");
+  if (!driver) return; // model still loading; try again next frame
+  car.userData.inside = inside;
+  driver.visible = !inside;
+  car.traverse((o) => {
+    const mat = o instanceof THREE.Mesh ? (o.material as THREE.MeshStandardMaterial) : null;
+    if (!mat || !/Glass$/.test(mat.name)) return;
+    mat.userData.opacity ??= mat.opacity;
+    mat.opacity = inside ? 0.1 : (mat.userData.opacity as number);
+  });
+}
+
 function resetGears(g: Gearbox) {
   g.reset();
 }
@@ -112,9 +127,14 @@ function Driver({
     const sim = engine.sim.state.car;
     const viewName = VIEWS[view.current];
     rig.update(camera as THREE.PerspectiveCamera, viewName, p, speed, sim.offRoad, delta, car.current ?? undefined, EYE);
-    // Exterior hidden when the camera is inside or in front of the car; interior only from the driver's seat.
-    if (exterior.current) exterior.current.visible = viewName !== "Bumper" && viewName !== "Cockpit";
-    if (cockpitGroup.current) cockpitGroup.current.visible = viewName === "Cockpit";
+    // From the driver's seat you see the car's real interior, so the car stays visible; only the driver's own
+    // body is hidden (the camera is inside his head) and the glass is made clearer. Bumper cam hides the car.
+    const inCockpit = viewName === "Cockpit";
+    if (exterior.current) {
+      exterior.current.visible = viewName !== "Bumper";
+      setCockpitLook(exterior.current, inCockpit);
+    }
+    if (cockpitGroup.current) cockpitGroup.current.visible = inCockpit;
 
     // Gears: the cockpit hand reaches for the lever and the engine note cuts on every change.
     const shifted = started.current && updateGears(gears, speed, delta);
@@ -145,7 +165,7 @@ function Driver({
     <>
       <directionalLight
         ref={sun}
-        intensity={3.2}
+        intensity={4.6}
         color="#fff1dc"
         castShadow
         shadow-mapSize={[4096, 4096]}
@@ -183,7 +203,7 @@ function World({ track, layout }: { track: Track; layout: Layout }) {
   return (
     <>
       <Suspense fallback={<color attach="background" args={["#9fb4cc"]} />}>
-        <Environment files="/env/sky_2k.hdr" background environmentIntensity={0.55} />
+        <Environment files="/env/sky_2k.hdr" background environmentIntensity={0.32} />
       </Suspense>
       <fog attach="fog" args={[HORIZON, 350, 3000]} />
       <Ground height={height} />

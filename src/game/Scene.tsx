@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import * as THREE from "three";
 import { hashString, mulberry32 } from "@/sim/rng";
 import type { Track } from "@/sim";
-import { grassMaterial, pbr } from "./materials";
+import { grassMaterial, roadMaterial } from "./materials";
 import type { HeightFn } from "./terrain";
 
 const KERB_WIDTH = 1.2;
@@ -60,22 +60,43 @@ function stripGeometry(
 
 export function Road({ track }: { track: Track }) {
   const hw = track.halfWidth;
-  const { road, kerbs, lines, asphalt } = useMemo(() => {
+  const { road, kerbs, lines, asphalt, grid } = useMemo(() => {
     const red = new THREE.Color("#d63a2f");
     const white = new THREE.Color("#f2f2f2");
     const kerbColor = (i: number) => (Math.floor(i / 2) % 2 ? red : white);
     const kerbs = [stripGeometry(track, hw, hw + KERB_WIDTH, 0.03, kerbColor), stripGeometry(track, -hw, -hw - KERB_WIDTH, 0.03, kerbColor)];
     const lines = [stripGeometry(track, hw - 0.7, hw - 0.4, 0.025), stripGeometry(track, -hw + 0.7, -hw + 0.4, 0.025)];
-    // Road UVs span the 14 m width once; repeat 4 = one scanned asphalt tile per 3.5 m.
-    const asphalt = pbr("asphalt", 4);
-    return { road: stripGeometry(track, -hw, hw, 0.02), kerbs, lines, asphalt };
+    const asphalt = roadMaterial();
+    // Starting grid: staggered white boxes painted on the straight behind the line.
+    const { points, tangents } = track;
+    const n = points.length;
+    const grid = Array.from({ length: 10 }, (_, k) => {
+      const i = (n - 4 - k * 4) % n;
+      const side = k % 2 ? 1 : -1;
+      const t = tangents[i];
+      return { x: points[i].x - t.z * side * 2.6, z: points[i].z + t.x * side * 2.6, rot: Math.atan2(t.x, t.z) };
+    });
+    return { road: stripGeometry(track, -hw, hw, 0.02), kerbs, lines, asphalt, grid };
   }, [track, hw]);
 
   return (
     <group>
-      <mesh geometry={road} receiveShadow>
-        <meshStandardMaterial {...asphalt} color="#b9bcc0" roughness={1} normalScale={[0.8, 0.8]} />
-      </mesh>
+      <mesh geometry={road} material={asphalt} receiveShadow />
+      {grid.map((g, i) => (
+        <group key={i} position={[g.x, 0.027, g.z]} rotation={[0, g.rot, 0]}>
+          {/* Front bar and two short side ticks of a grid slot */}
+          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 2.2]}>
+            <planeGeometry args={[2.6, 0.14]} />
+            <meshStandardMaterial color="#e8e8e8" roughness={0.85} />
+          </mesh>
+          {[-1.23, 1.23].map((x) => (
+            <mesh key={x} rotation={[-Math.PI / 2, 0, 0]} position={[x, 0, 1.75]}>
+              <planeGeometry args={[0.14, 0.9]} />
+              <meshStandardMaterial color="#e8e8e8" roughness={0.85} />
+            </mesh>
+          ))}
+        </group>
+      ))}
       {kerbs.map((g, i) => (
         <mesh key={i} geometry={g} receiveShadow>
           <meshStandardMaterial vertexColors roughness={0.8} />
