@@ -83,9 +83,15 @@ function setCockpitLook(car: THREE.Object3D, inside: boolean) {
   driver.visible = !inside;
   car.traverse((o) => {
     const mat = o instanceof THREE.Mesh ? (o.material as THREE.MeshStandardMaterial) : null;
-    if (!mat || !/Glass$/.test(mat.name)) return;
-    mat.userData.opacity ??= mat.opacity;
-    mat.opacity = inside ? 0.1 : (mat.userData.opacity as number);
+    if (!mat) return;
+    if (/Glass$/.test(mat.name)) {
+      mat.userData.opacity ??= mat.opacity;
+      mat.opacity = inside ? 0.1 : (mat.userData.opacity as number);
+    } else if (/_Black$/.test(mat.name)) {
+      // The cabin trim is pure black in the model, which reads as a void from inside: lift it to dark grey.
+      mat.userData.color ??= mat.color.getHex();
+      mat.color.set(inside ? "#30343b" : (mat.userData.color as number));
+    }
   });
 }
 
@@ -453,7 +459,8 @@ export default function Game() {
         </div>
       </div>
       <div className={styles.lights} ref={lightsEl} />
-      <Tacho ref={tacho} />
+      {/* The cockpit has its own dials on the dash */}
+      {VIEWS[viewIdx] !== "Cockpit" && <Tacho ref={tacho} />}
       <div className={styles.offRoad} ref={offRoadEl}>
         Off road
       </div>

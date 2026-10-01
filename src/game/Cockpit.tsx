@@ -1,37 +1,32 @@
 "use client";
 
 // Everything you look at from the driver's seat. The Azura model's own interior is only a black shell (no
-// dials, no shifter, flat mirrors), so the parts that matter are built here and laid over it:
-// an instrument cluster with analog dials, a steering wheel that follows your input, gloved hands and arms,
-// an H-pattern shifter the right hand reaches for on every gear change, and working mirrors.
-// Positions are in the car's local frame (metres): +z forward, +x left, y up, and were measured from the
-// model: steering wheel centred at (0.30, 0.81, 0.27), rear-view mirror at (0.01, 1.02, 0.18), left door
-// mirror at (0.71, 0.83, 0.34), cabin roof at ~1.12, left-hand drive.
-import { useFBO } from "@react-three/drei";
-import { useFrame } from "@react-three/fiber";
+// dials, no shifter), so the parts that matter are built here and laid over it: an instrument cluster with
+// analog dials seen through the wheel, a steering wheel that follows your input, gloved hands and arms, and an
+// H-pattern shifter the right hand reaches for on every gear change.
+// Positions are in the car's local frame (metres): +z forward, +x left, y up. Left-hand drive. The model's own
+// fixed steering wheel is removed by scripts/convert-cars.mjs. Layout was tuned against a screenshot: the eye is
+// well forward of the headrest so the low roof stays out of shot, and the wheel is small and low enough that
+// the dials show between its hub and rim.
 import { forwardRef, useImperativeHandle, useMemo, useRef } from "react";
 import * as THREE from "three";
 
-/** Driver's eye: low enough that the roof and screen header stay out of the way, just ahead of the headrest. */
-export const EYE = new THREE.Vector3(0.31, 0.99, -0.22);
-/** Sits a touch nearer the driver than the model's static wheel, so this one is what you see. */
-const WHEEL_POS = new THREE.Vector3(0.3, 0.79, 0.25);
-/** Raked well back like a sports car's, so the top of the rim stays below the view of the road. */
-const WHEEL_TILT = 0.9;
-const RIM = 0.15;
-/** Shifter between the seats; its knob sits at the bottom edge of the view. */
-const LEVER_PIVOT = new THREE.Vector3(0.02, 0.6, 0.16);
+export const EYE = new THREE.Vector3(0.31, 0.98, -0.05);
+/** Close enough to the driver that the dials can sit just behind it and still be in front of the model's dash. */
+const WHEEL_POS = new THREE.Vector3(0.3, 0.73, 0.29);
+const WHEEL_TILT = 0.5;
+const RIM = 0.14;
+/** Hands hold the rim at 10 and 2 o'clock: this far round from 9 and 3 (radians). */
+const GRIP_ANGLE = 0.61;
+/** Shifter just right of the wheel, high enough to be in shot even in a narrow window. */
 const LEVER_LEN = 0.16;
-const SHOULDER_L = new THREE.Vector3(0.5, 0.82, -0.28);
-const SHOULDER_R = new THREE.Vector3(0.13, 0.82, -0.28);
+const LEVER_PIVOT = new THREE.Vector3(0.08, 0.6, 0.4);
+const SHOULDER_L = new THREE.Vector3(0.5, 0.8, -0.12);
+const SHOULDER_R = new THREE.Vector3(0.13, 0.8, -0.12);
 /** How long the hand spends reaching for the lever and back (seconds). */
 const SHIFT_TIME = 0.65;
-const SUIT = "#b3261e";
+const SUIT = "#8f1f1a";
 const GLOVE = "#c8322b"; // bright racing gloves read clearly against the dark cabin
-/** The mirrors' camera looks straight back from just behind the rear bumper, so our own car isn't in the shot. */
-const MIRROR_CAM = new THREE.Vector3(0, 1.0, -2.1);
-/** Redraw the mirrors every N frames; a full extra scene render each frame isn't worth it. */
-const MIRROR_EVERY = 3;
 
 export interface CockpitHandle {
   update(frame: { steer: number; gear: number; speedKmh: number; rpm: number; delta: number }): void;
@@ -184,10 +179,6 @@ function Fist() {
         <capsuleGeometry args={[0.012, 0.035, 4, 8]} />
         <meshStandardMaterial color={GLOVE} roughness={0.55} />
       </mesh>
-      <mesh position={[0, 0, -0.09]} rotation={[Math.PI / 2, 0, 0]}>
-        <cylinderGeometry args={[0.036, 0.034, 0.05, 14]} />
-        <meshStandardMaterial color="#f2f2f2" roughness={0.6} />
-      </mesh>
     </group>
   );
 }
@@ -195,46 +186,11 @@ function Fist() {
 function Limb({ limbRef, radius }: { limbRef: React.RefObject<THREE.Mesh | null>; radius: number }) {
   return (
     <mesh ref={limbRef}>
-      <capsuleGeometry args={[radius, 1, 6, 12]} />
+      <cylinderGeometry args={[radius * 0.85, radius, 1, 12]} />
       <meshStandardMaterial color={SUIT} roughness={0.75} />
     </mesh>
   );
 }
-
-/** Point the mirror camera straight back from behind the car and render the scene into the mirror texture. */
-function renderMirror(gl: THREE.WebGLRenderer, scene: THREE.Scene, cam: THREE.PerspectiveCamera, target: THREE.WebGLRenderTarget, car: THREE.Object3D, hide: THREE.Object3D) {
-  car.updateMatrixWorld();
-  cam.position.copy(car.localToWorld(MIRROR_CAM.clone()));
-  cam.lookAt(car.localToWorld(new THREE.Vector3(MIRROR_CAM.x, MIRROR_CAM.y - 0.6, MIRROR_CAM.z - 30)));
-  // The mirror surfaces must not be drawn while they are the render target (that's a feedback loop).
-  hide.visible = false;
-  const previous = gl.getRenderTarget();
-  gl.setRenderTarget(target);
-  gl.render(scene, cam);
-  gl.setRenderTarget(previous);
-  hide.visible = true;
-}
-
-/** Mirrors flip left and right. */
-function flipped(texture: THREE.Texture) {
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.repeat.set(-1, 1);
-  texture.offset.set(1, 0);
-  return texture;
-}
-
-/** A mirror-glass rectangle showing only part of the shared rear view (u0..u1, v0..v1 of the image). */
-function croppedPlane(w: number, h: number, u0: number, u1: number, v0: number, v1: number) {
-  const g = new THREE.PlaneGeometry(w, h);
-  const uv = g.getAttribute("uv");
-  for (let i = 0; i < uv.count; i++) uv.setXY(i, u0 + uv.getX(i) * (u1 - u0), v0 + uv.getY(i) * (v1 - v0));
-  return g;
-}
-
-// Angles that turn each mirror to face the driver's eye (a plane faces +z; rotating about y by a turns it to
-// (sin a, cos a)). Interior mirror -> eye is (+0.30, -0.39); door mirror -> eye is (-0.40, -0.54).
-const REAR_MIRROR_YAW = Math.atan2(0.3, -0.385);
-const DOOR_MIRROR_YAW = Math.atan2(-0.4, -0.54);
 
 export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
   const wheelSpin = useRef<THREE.Group>(null);
@@ -247,29 +203,13 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
   const anchorL = useRef<THREE.Object3D>(null);
   const anchorR = useRef<THREE.Object3D>(null);
   const root = useRef<THREE.Group>(null);
-  const mirrors = useRef<THREE.Group>(null);
   const cluster = useMemo(() => canvasTexture(512, 200), []);
   const knob = useMemo(() => knobTexture(), []);
-  const state = useRef({ gear: 1, steer: 0, shiftT: 1, lastDash: "", leverFrom: [0, 0] as [number, number], frame: 0 });
+  const state = useRef({ gear: 1, steer: 0, shiftT: 1, lastDash: "", leverFrom: [0, 0] as [number, number] });
   const tmp = useMemo(
     () => ({ a: new THREE.Vector3(), b: new THREE.Vector3(), knob: new THREE.Vector3(), el: new THREE.Vector3(), q: new THREE.Quaternion() }),
     [],
   );
-
-  // Mirrors: a low-resolution render of the view behind the car, shared by the rear-view and door mirrors.
-  const mirrorTarget = useFBO(384, 192, { type: THREE.HalfFloatType });
-  const mirrorCam = useMemo(() => new THREE.PerspectiveCamera(38, 2, 0.5, 1200), []);
-  const mirrorMap = useMemo(() => flipped(mirrorTarget.texture), [mirrorTarget]);
-  // The door mirror shows the left third of the view behind (the lane beside you).
-  const doorGlass = useMemo(() => croppedPlane(0.15, 0.085, 0, 0.4, 0.15, 0.85), []);
-
-  useFrame(({ gl, scene }) => {
-    const r = root.current;
-    // Only while the cockpit is actually on screen (its parent group is hidden in the other views).
-    if (!r || !mirrors.current || !r.parent?.visible || !r.parent.parent) return;
-    if (state.current.frame++ % MIRROR_EVERY !== 0) return;
-    renderMirror(gl, scene, mirrorCam, mirrorTarget, r.parent.parent, mirrors.current);
-  });
 
   useImperativeHandle(ref, () => ({
     update({ steer, gear, speedKmh, rpm, delta }) {
@@ -327,64 +267,33 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
   return (
     <group ref={root}>
       {/* The cabin gets no direct sun; a soft light keeps the wheel, dials and hands readable. */}
-      <pointLight position={[0.2, 1.0, 0.0]} intensity={0.5} distance={1.4} decay={1.5} color="#fff1dd" />
+      <pointLight position={[0.2, 0.95, 0.12]} intensity={0.9} distance={1.6} decay={1.5} color="#fff1dd" />
 
-      {/* Instrument cluster: a hooded binnacle behind the wheel, dials facing the driver, seen through the
-          top half of the wheel (below the view of the road) */}
-      <group position={[0.3, 0.836, 0.4]} rotation={[0.3, 0, 0]}>
-        <mesh position={[0, 0, 0.045]}>
-          <boxGeometry args={[0.26, 0.105, 0.1]} />
-          {trim}
-        </mesh>
-        <mesh position={[0, 0.058, 0.02]}>
-          <boxGeometry args={[0.28, 0.018, 0.15]} />
-          {trim}
-        </mesh>
-        <mesh position={[0, 0, -0.008]} rotation={[0, Math.PI, 0]}>
-          <planeGeometry args={[0.23, 0.09]} />
-          <meshBasicMaterial map={cluster.texture} toneMapped={false} />
-        </mesh>
-      </group>
-
-      {/* Mirrors: the same live rear view on the interior mirror and the left door mirror */}
-      <group ref={mirrors}>
-        <mesh position={[0.012, 1.02, 0.166]} rotation={[0, REAR_MIRROR_YAW, 0]}>
-          <planeGeometry args={[0.22, 0.062]} />
-          <meshBasicMaterial map={mirrorMap} />
-        </mesh>
-        <mesh position={[0.706, 0.83, 0.313]} rotation={[0, DOOR_MIRROR_YAW, 0]} geometry={doorGlass}>
-          <meshBasicMaterial map={mirrorMap} />
-        </mesh>
-      </group>
-      {/* Mirror surrounds, just behind the glass */}
-      <mesh position={[0.008, 1.02, 0.172]} rotation={[0, REAR_MIRROR_YAW, 0]}>
-        <boxGeometry args={[0.235, 0.076, 0.012]} />
-        {trim}
-      </mesh>
-      <mesh position={[0.712, 0.83, 0.322]} rotation={[0, DOOR_MIRROR_YAW, 0]}>
-        <boxGeometry args={[0.165, 0.1, 0.014]} />
-        {trim}
-      </mesh>
-
-      {/* Steering wheel, tilted toward the driver; the left hand is fixed on the rim at 9 o'clock */}
+      {/* Steering wheel, tilted toward the driver; the left hand stays on the rim at 10 o'clock */}
       <group position={WHEEL_POS} rotation={[WHEEL_TILT, 0, 0]}>
         {/* Column */}
         <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, 0.13]}>
           <cylinderGeometry args={[0.03, 0.04, 0.26, 12]} />
           {trim}
         </mesh>
+        {/* Dials: mounted on the column 3 cm behind the wheel and in line with it, so they show through the top
+            half of the wheel and nothing in the car model can cover them. They don't turn with the wheel. */}
+        <group position={[0, 0.082, 0.03]}>
+          <mesh rotation={[0, Math.PI, 0]}>
+            <planeGeometry args={[0.2, 0.078]} />
+            <meshBasicMaterial map={cluster.texture} toneMapped={false} />
+          </mesh>
+          <mesh position={[0, 0, 0.012]}>
+            <boxGeometry args={[0.215, 0.092, 0.02]} />
+            {trim}
+          </mesh>
+        </group>
         <group ref={wheelSpin}>
           <mesh>
-            <torusGeometry args={[RIM, 0.024, 14, 56]} />
+            <torusGeometry args={[RIM, 0.02, 14, 56]} />
             {leather}
           </mesh>
-          {/* Thumb grips at 9 and 3, and a yellow top-centre marker */}
-          {[-1, 1].map((sx) => (
-            <mesh key={sx} position={[sx * (RIM - 0.012), 0.012, -0.004]} scale={[1, 1.5, 1]}>
-              <sphereGeometry args={[0.03, 12, 10]} />
-              {leather}
-            </mesh>
-          ))}
+          {/* Yellow top-centre marker */}
           <mesh position={[0, RIM, 0]}>
             <boxGeometry args={[0.018, 0.02, 0.052]} />
             <meshStandardMaterial color="#f2c230" />
@@ -392,28 +301,29 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
           {/* Three spokes in brushed metal: left, right, bottom */}
           {(
             [
-              [0.085, 0, 0],
-              [-0.085, 0, 0],
-              [0, -0.085, Math.PI / 2],
+              [0.078, 0, 0],
+              [-0.078, 0, 0],
+              [0, -0.078, Math.PI / 2],
             ] as const
           ).map(([x, y, rz]) => (
             <mesh key={`${x},${y}`} position={[x, y, 0.004]} rotation={[0, 0, rz]}>
-              <boxGeometry args={[0.15, 0.034, 0.012]} />
+              <boxGeometry args={[0.13, 0.03, 0.012]} />
               {chrome}
             </mesh>
           ))}
           {/* Centre pad */}
           <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, -0.006]}>
-            <cylinderGeometry args={[0.058, 0.064, 0.04, 28]} />
+            <cylinderGeometry args={[0.048, 0.054, 0.035, 28]} />
             {leather}
           </mesh>
           <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, -0.028]}>
-            <cylinderGeometry args={[0.026, 0.026, 0.006, 24]} />
+            <cylinderGeometry args={[0.02, 0.02, 0.006, 24]} />
             {chrome}
           </mesh>
-          <object3D ref={anchorL} position={[RIM, 0, 0]} />
-          <object3D ref={anchorR} position={[-RIM, 0, 0]} />
-          <group position={[RIM, 0, 0]}>
+          {/* Grip points at 10 and 2 o'clock, turned so a fist's grip axis follows the rim */}
+          <object3D ref={anchorL} position={[RIM * Math.cos(GRIP_ANGLE), RIM * Math.sin(GRIP_ANGLE), 0]} rotation={[0, 0, GRIP_ANGLE]} />
+          <object3D ref={anchorR} position={[-RIM * Math.cos(GRIP_ANGLE), RIM * Math.sin(GRIP_ANGLE), 0]} rotation={[0, 0, -GRIP_ANGLE]} />
+          <group position={[RIM * Math.cos(GRIP_ANGLE), RIM * Math.sin(GRIP_ANGLE), 0]} rotation={[0, 0, GRIP_ANGLE]}>
             <Fist />
           </group>
         </group>
@@ -423,37 +333,35 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
       <group ref={handR}>
         <Fist />
       </group>
-      <Limb limbRef={upperL} radius={0.05} />
-      <Limb limbRef={lowerL} radius={0.042} />
-      <Limb limbRef={upperR} radius={0.05} />
-      <Limb limbRef={lowerR} radius={0.042} />
+      <Limb limbRef={upperL} radius={0.045} />
+      <Limb limbRef={lowerL} radius={0.036} />
+      <Limb limbRef={upperR} radius={0.045} />
+      <Limb limbRef={lowerR} radius={0.036} />
 
-      {/* Gear shifter: console, chrome gate surround, leather boot, chrome shaft, knob with the shift pattern */}
-      <mesh position={[LEVER_PIVOT.x, LEVER_PIVOT.y - 0.1, LEVER_PIVOT.z]}>
-        <boxGeometry args={[0.2, 0.2, 0.3]} />
+      {/* Gear shifter: small console, chrome gate ring, leather boot, chrome shaft, knob with the shift pattern */}
+      <mesh position={[LEVER_PIVOT.x, LEVER_PIVOT.y - 0.08, LEVER_PIVOT.z]}>
+        <boxGeometry args={[0.12, 0.16, 0.16]} />
         {trim}
       </mesh>
       <mesh position={[LEVER_PIVOT.x, LEVER_PIVOT.y + 0.003, LEVER_PIVOT.z]} rotation={[Math.PI / 2, 0, 0]}>
-        <torusGeometry args={[0.062, 0.006, 8, 28]} />
+        <torusGeometry args={[0.046, 0.005, 8, 28]} />
         {chrome}
       </mesh>
       <group ref={lever} position={LEVER_PIVOT}>
-        {/* Boot */}
-        <mesh position={[0, 0.045, 0]}>
-          <cylinderGeometry args={[0.018, 0.058, 0.09, 16]} />
+        <mesh position={[0, 0.04, 0]}>
+          <cylinderGeometry args={[0.014, 0.042, 0.08, 16]} />
           <meshStandardMaterial color="#17191d" roughness={0.9} />
         </mesh>
-        <mesh position={[0, 0.045 + LEVER_LEN / 2, 0]}>
-          <cylinderGeometry args={[0.009, 0.011, LEVER_LEN - 0.05, 12]} />
+        <mesh position={[0, 0.04 + LEVER_LEN / 2, 0]}>
+          <cylinderGeometry args={[0.007, 0.009, LEVER_LEN - 0.05, 12]} />
           {chrome}
         </mesh>
-        {/* Knob: a rounded ball with the pattern on a flat top */}
         <mesh position={[0, LEVER_LEN + 0.01, 0]} scale={[1, 0.92, 1]}>
-          <sphereGeometry args={[0.034, 20, 16]} />
+          <sphereGeometry args={[0.025, 20, 16]} />
           <meshStandardMaterial color="#14161a" roughness={0.35} />
         </mesh>
-        <mesh position={[0, LEVER_LEN + 0.041, 0]} rotation={[-Math.PI / 2, 0, Math.PI]}>
-          <circleGeometry args={[0.02, 24]} />
+        <mesh position={[0, LEVER_LEN + 0.033, 0]} rotation={[-Math.PI / 2, 0, Math.PI]}>
+          <circleGeometry args={[0.015, 24]} />
           <meshStandardMaterial map={knob} roughness={0.4} />
         </mesh>
       </group>
