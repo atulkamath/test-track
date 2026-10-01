@@ -2,7 +2,8 @@
 import * as THREE from "three";
 import type { Pose } from "./engine";
 
-export const VIEWS = ["Chase", "Cockpit", "Far chase", "Roof", "Bumper", "TV"] as const;
+// The first view is the default.
+export const VIEWS = ["Far chase", "Chase", "Cockpit", "Roof", "Bumper", "TV"] as const;
 export type View = (typeof VIEWS)[number];
 
 interface Follow {
@@ -37,7 +38,7 @@ export class CameraRig {
   update(camera: THREE.PerspectiveCamera, view: View, p: Pose, speed: number, offRoad: boolean, delta: number, carRoot?: THREE.Object3D, eye?: THREE.Vector3) {
     const fx = Math.sin(p.angle);
     const fz = Math.cos(p.angle);
-    const speedFrac = Math.min(Math.abs(speed) / 55, 1);
+    const speedFrac = Math.min(Math.abs(speed) / 64, 1);
     const changed = view !== this.lastView;
     this.lastView = view;
     let fov: number;
@@ -47,8 +48,9 @@ export class CameraRig {
       camera.position.copy(carRoot.localToWorld(this.desired.copy(eye)));
       // Tiny engine/road vibration that grows with speed.
       camera.position.y += (Math.random() - 0.5) * (0.002 + speedFrac * 0.006 + (offRoad ? 0.02 : 0));
-      camera.lookAt(carRoot.localToWorld(this.target.set(eye.x * 0.6, eye.y - 1.0, eye.z + 12))); // ~5° down and slightly toward the car's centre
-      fov = 72 + speedFrac * 6;
+      // ~5° down, and ~6° toward the middle of the windscreen so the left pillar doesn't crowd the view.
+      camera.lookAt(carRoot.localToWorld(this.target.set(eye.x - 1.3, eye.y - 1.0, eye.z + 12)));
+      fov = 60 + speedFrac * 5;
     } else if (view === "TV" && this.tvSpots.length > 0) {
       // Pick the nearest trackside camera, switching only when another is clearly closer (like a TV director).
       let best = 0;

@@ -15,15 +15,25 @@ export interface CarState {
 
 export const DT = 1 / 60;
 
-const ACCEL = 28;
-const BRAKE = 70;
-const REVERSE_ACCEL = 16;
-const COAST = 6;
-const MAX_SPEED = 55;
+// Acceleration is traction-limited off the line, then power-limited (force = power / speed), against air drag
+// that grows with speed squared. Roughly a 300 hp sports coupe: 0-100 km/h in ~4 s, top speed ~230 km/h.
+/** Launch acceleration the tyres can put down (m/s^2). */
+const TRACTION = 8.5;
+/** Engine power per unit mass (m^2/s^3). */
+const POWER = 150;
+/** Air drag coefficient: drag = AIR_DRAG * v^2. Top speed is where POWER / v equals it. */
+const AIR_DRAG = 0.000572;
+/** Full braking (m/s^2), about 1.5 g. Exported so the autopilot can judge braking distances. */
+export const BRAKE = 15;
+const REVERSE_ACCEL = 5;
+/** Engine braking and rolling resistance with no pedal pressed. */
+const COAST = 1.2;
+/** Top speed reference (m/s) used to scale steering; the drag model settles just under it. */
+export const MAX_SPEED = 64;
 const REVERSE_MAX = 12;
 const OFFROAD_MAX = 16;
 /** How hard the car is dragged down to OFFROAD_MAX when it leaves the road. */
-const OFFROAD_DRAG = 80;
+const OFFROAD_DRAG = 22;
 /** Heading steps per tick at full steer (4096 steps = one turn). */
 const TURN_STEPS = 26;
 /** Below this speed steering weakens linearly. */
@@ -50,13 +60,20 @@ export function stepCar(car: CarState, input: number): CarState {
   let fwd = car.vx * fx + car.vz * fz;
   let side = car.vx * fz - car.vz * fx;
 
-  if (input & UP) fwd += (fwd < 0 ? BRAKE : ACCEL) * DT;
-  else if (input & DOWN) fwd -= (fwd > 0 ? BRAKE : REVERSE_ACCEL) * DT;
+  if (input & UP) {
+    if (fwd < 0) fwd += BRAKE * DT;
+    else {
+      const drive = POWER / (fwd < 1 ? 1 : fwd);
+      fwd += (drive < TRACTION ? drive : TRACTION) * DT;
+    }
+  } else if (input & DOWN) fwd -= (fwd > 0 ? BRAKE : REVERSE_ACCEL) * DT;
   else if (fwd > 0) fwd = Math.max(0, fwd - COAST * DT);
   else if (fwd < 0) fwd = Math.min(0, fwd + COAST * DT);
+  // Air drag always opposes forward motion.
+  if (fwd > 0) fwd -= AIR_DRAG * fwd * fwd * DT;
 
-  const max = car.offRoad ? OFFROAD_MAX : MAX_SPEED;
-  if (fwd > max) fwd = Math.max(max, fwd - (car.offRoad ? OFFROAD_DRAG * DT : Infinity));
+  if (car.offRoad && fwd > OFFROAD_MAX) fwd = Math.max(OFFROAD_MAX, fwd - OFFROAD_DRAG * DT);
+  if (fwd > MAX_SPEED) fwd = MAX_SPEED;
   if (fwd < -REVERSE_MAX) fwd = -REVERSE_MAX;
   side *= car.offRoad ? OFFROAD_GRIP : GRIP;
 

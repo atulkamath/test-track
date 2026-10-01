@@ -1,6 +1,6 @@
 // A simple driver that produces inputs exactly like a player would.
 // Drives the AI cars inside the sim, and generates test laps.
-import type { CarState } from "./car";
+import { BRAKE, type CarState } from "./car";
 import { DOWN, LEFT, RIGHT, UP } from "./input";
 import type { Track } from "./track";
 import { COS, SIN } from "./trig";
@@ -43,11 +43,18 @@ export function autopilotInput(track: Track, car: CarState, skill: Skill = DEFAU
   if (turnSide > 0.03) input |= LEFT;
   else if (turnSide < -0.03) input |= RIGHT;
 
-  // Brake before sharp corners: compare the tangent here with one further ahead.
-  const t0 = tangents[i];
-  const t1 = tangents[(i + 18) % n];
-  const bend = 1 - (t0.x * t1.x + t0.z * t1.z);
-  const safeSpeed = (bend > 0.5 ? 22 : bend > 0.25 ? 30 : bend > 0.1 ? 40 : 60) * skill.pace;
-  input |= car.speed > safeSpeed ? DOWN : UP;
+  // Brake in time for the corners ahead: for each point up the road, how fast may we be there, and can we
+  // still slow to that from here? (v^2 = v_corner^2 + 2 * braking * distance, with a safety margin.)
+  let brake = false;
+  const speedSq = car.speed * car.speed;
+  for (let k = 0; k <= 72 && !brake; k += 4) {
+    const t0 = tangents[(i + k) % n];
+    const t1 = tangents[(i + k + 18) % n];
+    const bend = 1 - (t0.x * t1.x + t0.z * t1.z);
+    const safe = (bend > 0.5 ? 22 : bend > 0.25 ? 30 : bend > 0.1 ? 40 : 70) * skill.pace;
+    const dist = k * 2; // samples are 2 m apart
+    if (speedSq > safe * safe + 2 * BRAKE * 0.7 * dist) brake = true;
+  }
+  input |= brake ? DOWN : UP;
   return input;
 }

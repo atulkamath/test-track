@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createSim, replay, step, UP, RUN_VERSION, type CarState } from "../src/sim";
+import { createSim, replay, step, LEFT, RIGHT, UP, RUN_VERSION, WALL_OFFSET_CORNER, type CarState } from "../src/sim";
+import { headingFromVector } from "../src/sim/trig";
 import { collideCars } from "../src/sim/collide";
 
 const car = (x: number, z: number, vx: number, vz: number): CarState => ({ x, z, vx, vz, heading: 1024, speed: 0, offRoad: false });
@@ -24,14 +25,34 @@ describe("collisions", () => {
   it("driving into a tyre stack stops the car going through it", () => {
     const sim = createSim("2026-10-01");
     const tyre = sim.track.obstacles.find((o) => o.kind === "tyre")!;
-    // Aim the player straight at the tyre from 12 m away, flat out.
-    Object.assign(sim.state.car, { x: tyre.x - 12, z: tyre.z, vx: 30, vz: 0, heading: 1024 });
+    // Approach from the track side: start 8 m from the tyre toward the nearest bit of road, aimed straight at it.
+    const road = sim.track.points.reduce((best, p) => (Math.hypot(p.x - tyre.x, p.z - tyre.z) < Math.hypot(best.x - tyre.x, best.z - tyre.z) ? p : best));
+    const len = Math.hypot(road.x - tyre.x, road.z - tyre.z);
+    const ux = (road.x - tyre.x) / len;
+    const uz = (road.z - tyre.z) / len;
+    Object.assign(sim.state.car, { x: tyre.x + ux * 8, z: tyre.z + uz * 8, vx: -ux * 25, vz: -uz * 25, heading: headingFromVector(-ux, -uz) });
     sim.state.bots = [];
-    for (let t = 0; t < 60; t++) step(sim, UP);
+    for (let t = 0; t < 90; t++) step(sim, UP);
     const c = sim.state.car;
-    // Never ends up past the tyre on the far side, and never overlaps it.
-    expect(c.x).toBeLessThan(tyre.x);
+    // Still on the track side of the tyre, and not overlapping it.
+    expect((c.x - tyre.x) * ux + (c.z - tyre.z) * uz).toBeGreaterThan(0);
     expect(Math.hypot(c.x - tyre.x, c.z - tyre.z)).toBeGreaterThan(tyre.r);
+  });
+
+  it("barriers keep the car inside the circuit whatever the driver does", () => {
+    for (const seed of ["2026-10-01", "2026-10-02", "2026-10-03"]) {
+      const sim = createSim(seed);
+      sim.state.bots = [];
+      let worst = 0;
+      for (let t = 0; t < 60 * 60; t++) {
+        // Flat out, yanking the wheel left and right in long bursts: guaranteed to hit both walls repeatedly.
+        step(sim, UP | (Math.floor(t / 90) % 3 === 0 ? LEFT : Math.floor(t / 90) % 3 === 1 ? RIGHT : 0));
+        const { x, z } = sim.state.car;
+        const d = Math.min(...sim.track.points.map((p) => Math.hypot(p.x - x, p.z - z)));
+        worst = Math.max(worst, d);
+      }
+      expect(worst).toBeLessThan(WALL_OFFSET_CORNER + 0.5);
+    }
   });
 
   it("clipping a cone knocks it over and costs speed", () => {

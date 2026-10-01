@@ -1,6 +1,6 @@
 import { autopilotInput, type Skill } from "./autopilot";
 import { stepCar, type CarState } from "./car";
-import { collideCars, collideObstacles, type Knock } from "./collide";
+import { collideCars, collideObstacles, collideWalls, type Knock } from "./collide";
 import { INPUT_MASK } from "./input";
 import { hashString } from "./rng";
 import { headingFromVector } from "./trig";
@@ -10,7 +10,7 @@ export const TICK_RATE = 60;
 /** Replays longer than this are rejected (10 minutes). */
 export const MAX_TICKS = TICK_RATE * 60 * 10;
 /** Bump whenever sim rules change: old runs can't be replayed faithfully. */
-export const RUN_VERSION = 3 as const;
+export const RUN_VERSION = 4 as const;
 const START_INDEX = 3;
 
 /** AI traffic: where each car starts (fraction of a lap ahead of the player) and how well it drives. */
@@ -73,6 +73,7 @@ function moveCar(sim: Sim, car: CarState, input: number): void {
   stepCar(car, input);
   car.offRoad = distanceToCentre(sim.track, car.x, car.z) > sim.track.halfWidth;
   collideObstacles(car, sim.track.obstacles, sim.state.knocked, sim.state.tick);
+  collideWalls(car, sim.track.walls);
 }
 
 function moveBots(sim: Sim): void {

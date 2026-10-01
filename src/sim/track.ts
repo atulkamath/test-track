@@ -1,4 +1,4 @@
-import { generateObstacles, type Obstacle } from "./obstacles";
+import { generateObstacles, generateWalls, type Obstacle, type Wall } from "./obstacles";
 import { hashString, mulberry32 } from "./rng";
 import { dcos, dsin } from "./trig";
 
@@ -24,6 +24,8 @@ export interface Track {
   /** gates[0] is start/finish; a lap = gates 1..n-1 in order, then gate 0. */
   gates: Gate[];
   obstacles: Obstacle[];
+  /** Barriers down both sides of the lap. */
+  walls: Wall[];
   length: number;
 }
 
@@ -143,8 +145,9 @@ function build(seed: string, points: Vec2[]): Track {
     const nz = t.x * GATE_HALF_LENGTH;
     gates.push({ a: { x: p.x - nx, z: p.z - nz }, b: { x: p.x + nx, z: p.z + nz }, t });
   }
-  const track: Track = { seed, points, tangents, halfWidth: HALF_WIDTH, gates, obstacles: [], length: n * SPACING };
+  const track: Track = { seed, points, tangents, halfWidth: HALF_WIDTH, gates, obstacles: [], walls: [], length: n * SPACING };
   track.obstacles = generateObstacles(track);
+  track.walls = generateWalls(track);
   return track;
 }
 

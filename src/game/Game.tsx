@@ -7,7 +7,7 @@ import { ToneMappingMode } from "postprocessing";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { COS, DOWN, LEFT, RIGHT, SIN, UP, generateTrack, type Track } from "@/sim";
-import { Sound } from "./audio";
+import { Sound, type OtherCar } from "./audio";
 import { CameraRig, VIEWS } from "./camera";
 import { animateCar, Car, newCarAnim, PLAYER_MODEL } from "./Car";
 import { Cockpit, EYE, type CockpitHandle } from "./Cockpit";
@@ -15,7 +15,7 @@ import { Gearbox } from "./gearbox";
 import { Crowd } from "./Crowd";
 import { BigScreen, Blimp, Helicopter, Lake, Paddock } from "./Life";
 import { Obstacles, SkidMarks, Traffic, type SkidHandle } from "./Dynamic";
-import { Engine, formatTicks } from "./engine";
+import { Engine, formatTicks, type Pose } from "./engine";
 import { FinishLine, GatePosts, Ground, Road, RunOff, Trees } from "./Scene";
 import { Tacho, type TachoHandle } from "./Tacho";
 import { Pylons, Ridges, Town } from "./Background";
@@ -48,6 +48,30 @@ function todaySeed(): string {
 /** Gear + rpm to show: neutral at idle until the run starts. */
 function gearDisplay(g: Gearbox, started: boolean): [number, number] {
   return started ? [g.gear, g.rpm] : [0, 900];
+}
+
+/** Where each AI car is relative to ours and how it's moving, for the pass-by sound. */
+function hearOtherCars(engine: Engine, gearboxes: Gearbox[], lastGaps: number[], p: Pose, delta: number): OtherCar[] {
+  const me = engine.sim.state.car;
+  // Right-hand direction of our car (forward is (sin, cos); +x is its left).
+  const rx = -Math.cos(p.angle);
+  const rz = Math.sin(p.angle);
+  return engine.sim.state.bots.map((bot, k) => {
+    const bp = engine.botPose(k);
+    const dx = bp.x - p.x;
+    const dz = bp.z - p.z;
+    const dist = Math.hypot(dx, dz);
+    const radialSpeed = delta > 0 && lastGaps[k] !== undefined ? (dist - lastGaps[k]) / delta : 0;
+    lastGaps[k] = dist;
+    gearboxes[k].update(bot.speed, delta);
+    return {
+      dist,
+      pan: (dx * rx + dz * rz) / Math.max(dist, 3),
+      rpm: gearboxes[k].rpm,
+      radialSpeed,
+      relSpeed: Math.hypot(bot.vx - me.vx, bot.vz - me.vz),
+    };
+  });
 }
 
 /** Hide the player's driver figure and thin the window tint while looking out from inside. */
@@ -104,6 +128,9 @@ function Driver({
   const cockpitGroup = useRef<THREE.Group>(null);
   const exterior = useRef<THREE.Group>(null);
   const lastGear = useRef(0);
+  // For the sound of the other cars: a gearbox each (so their engines rev believably) and last frame's gaps.
+  const botGears = useMemo(() => engine.sim.state.bots.map(() => new Gearbox()), [engine]);
+  const lastGaps = useRef<number[]>([]);
 
   useFrame(({ camera }, delta) => {
     if (started.current) engine.advance(delta, () => input.current);
@@ -151,6 +178,7 @@ function Driver({
       cn.level = Math.min(1, near / 350);
     }
     const slip = Math.abs(sim.vx * COS[sim.heading] - sim.vz * SIN[sim.heading]);
+    const others = hearOtherCars(engine, botGears, lastGaps.current, p, delta);
     sound.current?.update({
       rpm: started.current ? gears.rpm : 900,
       throttle: started.current && !engine.finished && (input.current & UP) !== 0,
@@ -158,6 +186,7 @@ function Driver({
       slip: sim.offRoad ? 0 : slip,
       crowd: cn.level,
       braking,
+      others,
     });
   });
 

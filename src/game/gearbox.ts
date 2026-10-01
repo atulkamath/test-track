@@ -1,12 +1,12 @@
 // Purely cosmetic gearbox: the sim has no gears. One instance drives the tacho, cockpit and engine sound,
-// so they always agree. The sim car accelerates very hard, so upshifts are held for a minimum time:
-// the revs climb onto the limiter, then it changes gear, instead of flicking through all six in 2 seconds.
-const GEAR_TOP_KMH = [0, 55, 95, 130, 160, 185, 999];
+// so they always agree. Ratios are spaced for the sim car's 230 km/h top speed; a short minimum gap between
+// shifts keeps the lever animation readable.
+const GEAR_TOP_KMH = [0, 62, 104, 146, 186, 216, 999];
 export const IDLE_RPM = 1100;
 export const MAX_RPM = 9000;
 const LIMITER_RPM = 8500;
 /** Minimum seconds between upshifts (and between downshifts). */
-const MIN_UPSHIFT_GAP = 0.9;
+const MIN_UPSHIFT_GAP = 0.6;
 const MIN_DOWNSHIFT_GAP = 0.35;
 
 function idealGear(kmh: number) {
@@ -17,7 +17,7 @@ function idealGear(kmh: number) {
 
 function rpmFor(gear: number, kmh: number) {
   const lo = GEAR_TOP_KMH[gear - 1];
-  const hi = Math.min(GEAR_TOP_KMH[gear], 200);
+  const hi = Math.min(GEAR_TOP_KMH[gear], 236);
   return IDLE_RPM + ((kmh - lo) / (hi - lo)) * 6600;
 }
 

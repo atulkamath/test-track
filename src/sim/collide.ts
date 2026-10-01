@@ -1,5 +1,5 @@
 import type { CarState } from "./car";
-import type { Obstacle } from "./obstacles";
+import type { Obstacle, Wall } from "./obstacles";
 import { COS, SIN } from "./trig";
 
 // Each car is two circles (front and back) so long cars don't overlap nose-first.
@@ -81,6 +81,39 @@ export function collideCars(a: CarState, b: CarState): void {
         a.vz += j * nz;
         b.vx -= j * nx;
         b.vz -= j * nz;
+      }
+    }
+  }
+}
+
+/** Cars this far beyond a wall are left alone (only reachable by being placed there, e.g. in tests). */
+const WALL_REACH = 4;
+const BARRIER_BOUNCE = 0.15;
+/** Speed kept along the wall while scraping it. */
+const BARRIER_SCRUB = 0.985;
+
+/** Keep the car on the track side of every barrier: push it back and kill the speed going into the wall. */
+export function collideWalls(car: CarState, walls: Wall[]): void {
+  for (const [cx, cz] of circles(car)) {
+    for (let i = 0; i < walls.length; i++) {
+      const w = walls[i];
+      // Signed distance from the wall line (positive = track side).
+      const d = (cx - w.ax) * w.nx + (cz - w.az) * w.nz;
+      if (d >= CAR_R || d < -WALL_REACH) continue;
+      // Only the stretch of line this segment actually covers.
+      const ex = w.bx - w.ax;
+      const ez = w.bz - w.az;
+      const t = ((cx - w.ax) * ex + (cz - w.az) * ez) / (ex * ex + ez * ez);
+      if (t < -0.05 || t > 1.05) continue;
+      const pen = CAR_R - d;
+      car.x += w.nx * pen;
+      car.z += w.nz * pen;
+      const vn = car.vx * w.nx + car.vz * w.nz;
+      if (vn < 0) {
+        car.vx -= (1 + BARRIER_BOUNCE) * vn * w.nx;
+        car.vz -= (1 + BARRIER_BOUNCE) * vn * w.nz;
+        car.vx *= BARRIER_SCRUB;
+        car.vz *= BARRIER_SCRUB;
       }
     }
   }

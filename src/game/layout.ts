@@ -1,5 +1,5 @@
 // Where the circuit set pieces go. Rendering only: nothing here touches the sim.
-import { cornerSides, GRAVEL_WIDTH, type Track } from "@/sim";
+import { cornerSides, GRAVEL_WIDTH, WALL_OFFSET, WALL_OFFSET_CORNER, type Track } from "@/sim";
 import { hashString, mulberry32 } from "@/sim/rng";
 
 export const KERB = 1.2;
@@ -198,7 +198,7 @@ export function buildLayout(track: Track): Layout {
   const SEG = 3; // samples per segment (6 m)
   const segLen = (track.length / n) * SEG + 0.15;
   const gBase = hw + KERB + 7;
-  const pitFrom = hw + KERB + 1.5;
+  const pitFrom = WALL_OFFSET; // the pit wall is the lap-long barrier
   const countFits = (s: number, far: number) => {
     let c = 0;
     for (let i = -39; i <= 12; i += SEG) if (fits(frame(track, i), s * (hw + KERB + 3), s * far)) c++;
@@ -220,7 +220,6 @@ export function buildLayout(track: Track): Layout {
   for (let i = -30; i <= 30; i += SEG) {
     const f = frame(track, i);
     if (!fits(f, pSide * (hw + KERB + 3), pSide * (hw + KERB + 24))) continue;
-    add(f, pSide * pitFrom, 0.6, 0.6, 1.2, segLen, "concrete"); // pit wall
     add(f, pSide * pitFrom, 2.7, 0.06, 3, segLen, "fence");
     add(f, pSide * (pitFrom + 6), 0.03, 11, 0.06, segLen, "asphalt"); // pit lane
     add(f, pSide * (hw + KERB + 12.2), 2.6, 0.12, 5.2, segLen - 0.4, "garage");
@@ -255,7 +254,7 @@ export function buildLayout(track: Track): Layout {
   const used: number[] = [];
   let standIdx = 0;
   for (const { cs, i } of candidates) {
-    if (used.length >= 9 || used.some((u) => Math.min(Math.abs(u - i), n - Math.abs(u - i)) < 36)) continue;
+    if (used.length >= 18 || used.some((u) => Math.min(Math.abs(u - i), n - Math.abs(u - i)) < 22)) continue;
     const onCorner = cs !== 0;
     const sides = onCorner ? [cs] : rand() < 0.5 ? [1, -1] : [-1, 1];
     const tiers = onCorner ? 9 : 7;
@@ -273,8 +272,8 @@ export function buildLayout(track: Track): Layout {
       const roofed = !onCorner && rand() < 0.6;
       idxs.forEach((k, j) => grandstand(frame(track, k), s, base, tiers, segLen, standIdx + j, roofed));
       standIdx += idxs.length;
-      used.push(i);
-      break;
+      if (!used.includes(i)) used.push(i);
+      // On a straight, carry on and try the other side too: stands facing each other across the track.
     }
   }
 
@@ -283,7 +282,7 @@ export function buildLayout(track: Track): Layout {
     const s = cornerSide[i];
     if (s === 0) continue;
     const f = frame(track, i);
-    const off = hw + KERB + GRAVEL_WIDTH + 1.8;
+    const off = WALL_OFFSET_CORNER;
     const p = at(f, s * off);
     if (clearance(track, p.x, p.z) < hw + 5) continue;
     add(f, s * off, 1.9, 0.06, 3.8, segLen, "fence");
@@ -302,10 +301,10 @@ export function buildLayout(track: Track): Layout {
     if ([-3, 0, 3].some((d) => cornerSide[(i + d + n) % n] !== 0)) continue;
     const f = frame(track, i);
     for (const s of [1, -1]) {
-      const off = hw + KERB + 4.5;
+      const off = WALL_OFFSET;
       const a = at(f, s * off);
       if (clearance(track, a.x, a.z) < hw + 4 || isReserved(a.x, a.z, 1)) continue;
-      add(f, s * off, 0.55, 0.3, 1.1, segLen, `ad${wallIdx++ % 5}`);
+      wallIdx++;
       add(f, s * off, 2.6, 0.06, 3, segLen, "fence");
       add(f, s * off, 2.6, 0.14, 3, 0.14, "steel", segLen / 2);
       const b = at(f, s * (off + 11));
@@ -429,6 +428,22 @@ export function buildLayout(track: Track): Layout {
       reserved.push({ x: lake.x, z: lake.z, r: lake.r + 6 });
     }
   }
+
+  // --- The lap-long barrier itself (solid in the sim): concrete blocks alternating with sponsor boards. ---
+  track.walls.forEach((w, k) => {
+    const dx = w.bx - w.ax;
+    const dz = w.bz - w.az;
+    boxes.push({
+      x: (w.ax + w.bx) / 2 - w.nx * 0.2,
+      y: 0.5,
+      z: (w.az + w.bz) / 2 - w.nz * 0.2,
+      rot: Math.atan2(dx, dz),
+      sx: 0.4,
+      sy: 1,
+      sz: Math.hypot(dx, dz) + 0.06,
+      kind: Math.floor(k / 3) % 2 ? `ad${Math.floor(k / 6) % 5}` : "concrete",
+    });
+  });
 
   // --- Sponsor covers on the tyre walls (the conveyor-belt skins real circuits use). ---
   const tyres = track.obstacles.filter((o) => o.kind === "tyre");

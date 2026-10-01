@@ -2,27 +2,28 @@
 
 // The moving parts of the cockpit view. The cabin itself (dash, doors, pillars, roof, bonnet) is the car model's
 // own interior; this adds what has to animate: a steering wheel that follows your input, gloved hands and arms,
-// a live gauge display, and a raised H-pattern shifter the right hand reaches for on every gear change.
+// a live gauge display on the wheel hub, and an H-pattern shifter the right hand reaches for on every gear change.
 // Positions are in the car's local frame (metres): +z forward, +x left, y up, and were measured from the
 // Azura model: its steering wheel is centred at (0.30, 0.81, 0.27), cabin roof at ~1.12, left-hand drive.
 import { forwardRef, useImperativeHandle, useMemo, useRef } from "react";
 import * as THREE from "three";
 
-/** Driver's eye: as high as the roof allows, just ahead of the headrest. */
-export const EYE = new THREE.Vector3(0.31, 1.05, -0.2);
+/** Driver's eye: low enough that the roof and screen header stay out of the way, just ahead of the headrest. */
+export const EYE = new THREE.Vector3(0.31, 0.99, -0.22);
 /** Sits a touch nearer the driver than the model's static wheel, so this one is what you see. */
-const WHEEL_POS = new THREE.Vector3(0.3, 0.81, 0.24);
-const WHEEL_TILT = 0.42;
-const RIM = 0.16;
-/** Raised shifter between the seats, inside the camera's view (bottom right). */
-const LEVER_PIVOT = new THREE.Vector3(0.0, 0.74, 0.12);
-const LEVER_LEN = 0.15;
-const SHOULDER_L = new THREE.Vector3(0.5, 0.88, -0.24);
-const SHOULDER_R = new THREE.Vector3(0.13, 0.88, -0.24);
+const WHEEL_POS = new THREE.Vector3(0.3, 0.79, 0.25);
+/** Raked well back like a sports car's, so the top of the rim stays below the view of the road. */
+const WHEEL_TILT = 0.9;
+const RIM = 0.15;
+/** Shifter between the seats; its knob sits at the bottom edge of the view. */
+const LEVER_PIVOT = new THREE.Vector3(0.02, 0.6, 0.16);
+const LEVER_LEN = 0.16;
+const SHOULDER_L = new THREE.Vector3(0.5, 0.82, -0.28);
+const SHOULDER_R = new THREE.Vector3(0.13, 0.82, -0.28);
 /** How long the hand spends reaching for the lever and back (seconds). */
 const SHIFT_TIME = 0.65;
 const SUIT = "#b3261e";
-const GLOVE = "#23272e";
+const GLOVE = "#c8322b"; // bright racing gloves read clearly against the dark cabin
 
 export interface CockpitHandle {
   update(frame: { steer: number; gear: number; speedKmh: number; rpm: number; delta: number }): void;
@@ -113,7 +114,7 @@ function Fist() {
       {/* Cuff */}
       <mesh position={[0, 0, -0.09]} rotation={[Math.PI / 2, 0, 0]}>
         <cylinderGeometry args={[0.036, 0.034, 0.05, 14]} />
-        <meshStandardMaterial color="#c8322b" roughness={0.6} />
+        <meshStandardMaterial color="#f2f2f2" roughness={0.6} />
       </mesh>
     </group>
   );
@@ -199,15 +200,8 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
   const trim = <meshStandardMaterial color="#1b1d21" roughness={0.8} />;
   return (
     <group ref={root}>
-      {/* Live gauge display, perched above the steering column */}
-      <mesh position={[0.3, 0.925, 0.33]} rotation={[0.35, Math.PI, 0]}>
-        <planeGeometry args={[0.2, 0.088]} />
-        <meshBasicMaterial map={dash.texture} toneMapped={false} />
-      </mesh>
-      <mesh position={[0.3, 0.925, 0.345]} rotation={[0.35, Math.PI, 0]}>
-        <boxGeometry args={[0.22, 0.105, 0.02]} />
-        {trim}
-      </mesh>
+      {/* The cabin gets no direct sun; a soft light keeps the wheel and hands readable. */}
+      <pointLight position={[0.2, 1.0, 0.0]} intensity={0.5} distance={1.4} decay={1.5} color="#fff1dd" />
 
       {/* Steering wheel, tilted toward the driver; the left hand is fixed on the rim at 9 o'clock */}
       <group position={WHEEL_POS} rotation={[WHEEL_TILT, 0, 0]}>
@@ -215,10 +209,19 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
           <cylinderGeometry args={[0.03, 0.04, 0.26, 12]} />
           {trim}
         </mesh>
+        {/* Race-style display on the hub (does not turn with the wheel), facing the driver */}
+        <mesh position={[0, 0, -0.022]} rotation={[0, Math.PI, 0]}>
+          <planeGeometry args={[0.125, 0.055]} />
+          <meshBasicMaterial map={dash.texture} toneMapped={false} />
+        </mesh>
+        <mesh position={[0, 0, -0.012]}>
+          <boxGeometry args={[0.14, 0.068, 0.014]} />
+          {trim}
+        </mesh>
         <group ref={wheelSpin}>
           <mesh>
-            <torusGeometry args={[RIM, 0.024, 12, 48]} />
-            <meshStandardMaterial color="#141619" roughness={0.45} />
+            <torusGeometry args={[RIM, 0.022, 12, 48]} />
+            <meshStandardMaterial color="#3a3f47" roughness={0.38} />
           </mesh>
           {/* Yellow top-centre marker */}
           <mesh position={[0, RIM, 0]}>
@@ -234,13 +237,9 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
           ).map(([x, y, w, h]) => (
             <mesh key={`${x},${y}`} position={[x, y, 0]}>
               <boxGeometry args={[w, h, 0.015]} />
-              <meshStandardMaterial color="#2a2d33" metalness={0.5} roughness={0.4} />
+              <meshStandardMaterial color="#c3c9cf" metalness={0.85} roughness={0.25} />
             </mesh>
           ))}
-          <mesh rotation={[Math.PI / 2, 0, 0]}>
-            <cylinderGeometry args={[0.045, 0.045, 0.03, 20]} />
-            <meshStandardMaterial color="#c8322b" roughness={0.4} />
-          </mesh>
           <object3D ref={anchorL} position={[RIM, 0, 0]} />
           <object3D ref={anchorR} position={[-RIM, 0, 0]} />
           <group position={[RIM, 0, 0]}>
