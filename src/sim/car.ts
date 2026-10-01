@@ -10,6 +10,8 @@ export interface CarState {
   heading: number;
   /** Signed forward speed (units/s), for the HUD. */
   speed: number;
+  /** Steering wheel position, -1 (full right) .. 1 (full left). Ramps toward the pressed direction. */
+  steer: number;
   offRoad: boolean;
 }
 
@@ -34,10 +36,15 @@ const REVERSE_MAX = 12;
 const OFFROAD_MAX = 16;
 /** How hard the car is dragged down to OFFROAD_MAX when it leaves the road. */
 const OFFROAD_DRAG = 22;
-/** Heading steps per tick at full steer (4096 steps = one turn). */
+/** Heading steps per tick at full lock and low speed (4096 steps = one turn). */
 const TURN_STEPS = 26;
 /** Below this speed steering weakens linearly. */
 const STEER_FULL_SPEED = 12;
+/** Steering gets slower with speed: turn rate is divided by (1 + speed / STEER_SPEED_SCALE). */
+const STEER_SPEED_SCALE = 40;
+/** How fast the wheel turns toward full lock, and back to centre when released (per second). */
+const STEER_RATE = 5;
+const STEER_RETURN = 8;
 /** Fraction of sideways velocity kept each tick; lower = grippier. */
 const GRIP = 0.84;
 const OFFROAD_GRIP = 0.7;
@@ -46,11 +53,15 @@ const OFFROAD_GRIP = 0.7;
 export function stepCar(car: CarState, input: number): CarState {
   const speedAbs = car.speed < 0 ? -car.speed : car.speed;
 
-  const steer = (input & LEFT ? 1 : 0) - (input & RIGHT ? 1 : 0);
-  if (steer !== 0) {
+  // The wheel doesn't snap to full lock: it winds toward the pressed direction and unwinds when released.
+  const want = (input & LEFT ? 1 : 0) - (input & RIGHT ? 1 : 0);
+  const rate = (want === 0 || want * car.steer < 0 ? STEER_RETURN : STEER_RATE) * DT;
+  if (car.steer < want) car.steer = car.steer + rate > want ? want : car.steer + rate;
+  else if (car.steer > want) car.steer = car.steer - rate < want ? want : car.steer - rate;
+  if (car.steer !== 0) {
     const low = speedAbs < STEER_FULL_SPEED ? speedAbs / STEER_FULL_SPEED : 1;
-    const high = 1 - 0.4 * (speedAbs / MAX_SPEED);
-    const turn = Math.round(steer * TURN_STEPS * low * high);
+    const high = 1 / (1 + speedAbs / STEER_SPEED_SCALE);
+    const turn = Math.round(car.steer * TURN_STEPS * low * high);
     car.heading = (car.heading + (car.speed < 0 ? -turn : turn)) & HEADING_MASK;
   }
 

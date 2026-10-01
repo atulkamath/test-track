@@ -10,7 +10,7 @@ export const TICK_RATE = 60;
 /** Replays longer than this are rejected (10 minutes). */
 export const MAX_TICKS = TICK_RATE * 60 * 10;
 /** Bump whenever sim rules change: old runs can't be replayed faithfully. */
-export const RUN_VERSION = 4 as const;
+export const RUN_VERSION = 5 as const;
 const START_INDEX = 3;
 
 /** AI traffic: where each car starts (fraction of a lap ahead of the player) and how well it drives. */
@@ -51,7 +51,7 @@ export interface Sim {
 function carAt(track: Track, i: number, speed: number): CarState {
   const p = track.points[i];
   const t = track.tangents[i];
-  return { x: p.x, z: p.z, vx: t.x * speed, vz: t.z * speed, heading: headingFromVector(t.x, t.z), speed, offRoad: false };
+  return { x: p.x, z: p.z, vx: t.x * speed, vz: t.z * speed, heading: headingFromVector(t.x, t.z), speed, steer: 0, offRoad: false };
 }
 
 export function createSim(seed: string, track: Track = generateTrack(seed)): Sim {

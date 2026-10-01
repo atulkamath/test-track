@@ -140,7 +140,8 @@ function Driver({
     car.current?.position.set(p.x, 0, p.z);
     car.current?.rotation.set(0, p.angle, 0);
 
-    const steer = (input.current & LEFT ? 1 : 0) - (input.current & RIGHT ? 1 : 0);
+    // The sim's own steering wheel position (it ramps), so the visible wheels match what the car is doing.
+    const steer = engine.sim.state.car.steer;
     const braking = (input.current & DOWN) !== 0 && speed > 0.5 && !engine.finished;
     if (car.current) animateCar(car.current, anim, speed, p.angle, engine.finished ? 0 : steer, braking, delta);
     skids.current?.track("player", engine.sim.state.car, p.x, p.z, p.angle, braking);

@@ -21,7 +21,7 @@ Controls: arrows / WASD, R restart, C cycle camera (chase, far chase, cockpit, r
   - Collisions: cars bump each other, cones get knocked (small speed loss), corner tyre walls are solid, and
     barriers run down both sides of the whole lap so a car can never leave the circuit.
   - Acceleration is traction- then power-limited against air drag (0-100 km/h in 3.7 s, top speed 230 km/h); braking is 1.5 g.
-  - `RUN_VERSION` (currently 4) must be bumped whenever sim rules change; older runs are rejected.
+  - `RUN_VERSION` (currently 5) must be bumped whenever sim rules change; older runs are rejected.
 - `src/game/` — R3F renderer + browser tick loop (`engine.ts`). Reads sim state only.
   Spectators (`Crowd.tsx`) are GPU-animated instances; skid marks, suspension and brake lights are visual only.
 - `test/golden` values in `sim.test.ts`: if they change, every stored run is invalidated.

@@ -17,8 +17,9 @@ interface Follow {
 }
 
 const FOLLOW: Record<Exclude<View, "TV" | "Cockpit">, Follow> = {
-  // Gran Turismo-style chase: low and close behind the bumper, locked firmly to the car, looking well up the road.
-  Chase: { back: 5.4, up: 1.7, ahead: 10, lookY: 1.05, stiffness: 16, fov: 56 },
+  // Gran Turismo-style chase: low and close behind the bumper, looking well up the road. It trails the car a
+  // little so steering inputs swing the car on screen rather than swinging the whole view.
+  Chase: { back: 5.4, up: 1.7, ahead: 10, lookY: 1.05, stiffness: 7, fov: 56 },
   "Far chase": { back: 11, up: 4.6, ahead: 6, lookY: 1, stiffness: 6, fov: 58 },
   Roof: { back: -0.3, up: 2.05, ahead: 20, lookY: 1.4, stiffness: 60, fov: 70 },
   Bumper: { back: -2.05, up: 0.7, ahead: 20, lookY: 0.9, stiffness: 80, fov: 74 },
