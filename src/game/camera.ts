@@ -3,7 +3,8 @@ import * as THREE from "three";
 import type { Pose } from "./engine";
 
 // The first view is the default.
-export const VIEWS = ["Chase", "Far chase", "Cockpit", "Roof", "Bumper", "TV"] as const;
+// "Classic chase" is the original camera, kept alongside the rebuilt "Chase" so the two can be compared with C.
+export const VIEWS = ["Classic chase", "Chase", "Far chase", "Cockpit", "Roof", "Bumper", "TV"] as const;
 export type View = (typeof VIEWS)[number];
 
 interface Follow {
@@ -25,7 +26,7 @@ interface Follow {
 // the same size and place on screen at any speed. Only the orbit angle lags, so in a turn the car swings in the
 // frame and the view catches up. Speed is sold by the lens widening and the camera easing back slightly, plus a
 // small spring: it drops back under hard acceleration and closes in under braking.
-const FOLLOW: Record<Exclude<View, "TV" | "Cockpit">, Follow> = {
+const FOLLOW: Record<Exclude<View, "TV" | "Cockpit" | "Classic chase">, Follow> = {
   Chase: { back: 5.2, backSpeed: 1.1, up: 1.65, ahead: 6, lookY: 1.05, yawRate: 5.5, fov: 58, fovSpeed: 14 },
   "Far chase": { back: 9.5, backSpeed: 2, up: 3.6, ahead: 6, lookY: 1, yawRate: 4, fov: 56, fovSpeed: 12 },
   Roof: { back: -0.3, backSpeed: 0, up: 2.05, ahead: 20, lookY: 1.4, yawRate: 60, fov: 70, fovSpeed: 8 },
@@ -65,6 +66,21 @@ export class CameraRig {
       // ~5° down, and ~6° toward the middle of the windscreen so the left pillar doesn't crowd the view.
       camera.lookAt(carRoot.localToWorld(this.target.set(eye.x - 1.3, eye.y - 1.0, eye.z + 12)));
       fov = 60 + speedFrac * 5;
+    } else if (view === "Classic chase") {
+      // The original camera: its position chases a point 6.4 m behind the car, so it trails further at speed.
+      this.desired.set(p.x - fx * 6.4, 2.2, p.z - fz * 6.4);
+      this.target.set(p.x + fx * 6, 1.1, p.z + fz * 6);
+      if (!this.snapped || changed) {
+        camera.position.copy(this.desired);
+        this.look.copy(this.target);
+        this.snapped = true;
+      }
+      camera.position.lerp(this.desired, 1 - Math.exp(-delta * 9));
+      this.look.lerp(this.target, 1 - Math.exp(-delta * 13.5));
+      const classicSpeed = Math.min(Math.abs(speed) / 55, 1);
+      camera.position.y += (Math.random() - 0.5) * ((offRoad && Math.abs(speed) > 3 ? 0.08 : 0) + classicSpeed * classicSpeed * 0.012);
+      camera.lookAt(this.look);
+      fov = 62 + classicSpeed * 14;
     } else if (view === "TV" && this.tvSpots.length > 0) {
       // Pick the nearest trackside camera, switching only when another is clearly closer (like a TV director).
       let best = 0;
