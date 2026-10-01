@@ -7,21 +7,26 @@ import { useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { Track } from "@/sim";
 import { GRAVEL_WIDTH } from "@/sim";
+import { useGLTF } from "@react-three/drei";
 import { KERB, type Box, type BoxKind, type Layout } from "./layout";
-import { ADS, adTexture, crowdTexture, fenceTexture, garageTexture, gravelTexture, towerTexture } from "./textures";
+import { pbr, worldMapped } from "./materials";
+import { ADS, adTexture, crowdTexture, fenceTexture, garageTexture, towerTexture } from "./textures";
 
 function useMaterials() {
   return useMemo(() => {
+    const concrete = pbr("concrete");
+    const asphalt = pbr("asphalt");
     const m: Record<string, THREE.Material> = {
       crowd: new THREE.MeshStandardMaterial({ map: crowdTexture(), roughness: 0.95 }),
-      concrete: new THREE.MeshStandardMaterial({ color: "#cfd3d6", roughness: 0.9 }),
+      // Scanned concrete, sampled in world space so stretched boxes don't smear it.
+      concrete: worldMapped(new THREE.MeshStandardMaterial({ map: concrete.map, roughnessMap: concrete.roughnessMap, color: "#d9dcde", roughness: 1 }), 4, "concrete"),
       roof: new THREE.MeshStandardMaterial({ color: "#f4f6f8", roughness: 0.45, metalness: 0.15 }),
       steel: new THREE.MeshStandardMaterial({ color: "#8a939c", roughness: 0.4, metalness: 0.6 }),
       glass: new THREE.MeshStandardMaterial({ color: "#24384d", roughness: 0.08, metalness: 0.9, envMapIntensity: 1.6 }),
       garage: new THREE.MeshStandardMaterial({ map: garageTexture(), roughness: 0.7 }),
       fence: new THREE.MeshStandardMaterial({ map: fenceTexture(), alphaTest: 0.4, side: THREE.DoubleSide, roughness: 0.6, metalness: 0.4 }),
-      asphalt: new THREE.MeshStandardMaterial({ color: "#44484e", roughness: 0.95 }),
-      berm: new THREE.MeshStandardMaterial({ color: "#5a9438", roughness: 1 }),
+      asphalt: worldMapped(new THREE.MeshStandardMaterial({ map: asphalt.map, roughnessMap: asphalt.roughnessMap, color: "#b9bcc0", roughness: 1 }), 3.5, "asphalt"),
+      berm: worldMapped(new THREE.MeshStandardMaterial({ map: pbr("grass").map, color: "#e6f0d8", roughness: 1 }), 3, "berm"),
       marshal: new THREE.MeshStandardMaterial({ color: "#f07a1a", roughness: 0.6 }),
     };
     ADS.forEach((_, i) => {
@@ -222,10 +227,11 @@ export function GravelTraps({ track, layout }: { track: Track; layout: Layout })
     g.computeVertexNormals();
     return g;
   }, [track, layout]);
-  const map = useMemo(() => gravelTexture(), []);
+  // Gravel UVs are in units of 10 m; repeat 4 = one scanned tile per 2.5 m.
+  const gravel = useMemo(() => pbr("gravel", 4), []);
   return (
     <mesh geometry={geometry} receiveShadow>
-      <meshStandardMaterial map={map} roughness={1} />
+      <meshStandardMaterial {...gravel} color="#e2d6c2" roughness={1} />
     </mesh>
   );
 }
@@ -252,45 +258,58 @@ export function Tents({ layout }: { layout: Layout }) {
   );
 }
 
-const PARKED_COLORS = ["#e9ecef", "#1d1f24", "#9aa3ad", "#c8322b", "#2f6fd6", "#f4f4f4", "#5b6770", "#8a1d1d"];
+// Generic passenger car pack by Comrade1280 (CC-BY 4.0) — see CREDITS.md.
+export const PACK_CARS = ["compact", "coupe", "hatchback", "minivan", "offroad", "pickup", "sedan", "sport", "suv", "wagon"];
+const packUrl = (name: string) => `/models/cars/${name}.glb`;
 
-/** Rows of parked cars: body + cabin boxes, instanced. */
-export function CarPark({ layout }: { layout: Layout }) {
-  const body = useRef<THREE.InstancedMesh>(null);
-  const cabin = useRef<THREE.InstancedMesh>(null);
+/** One car model drawn many times: an InstancedMesh per mesh inside the model. */
+function ParkedModel({ name, spots }: { name: string; spots: { x: number; z: number; rot: number }[] }) {
+  const { scene } = useGLTF(packUrl(name));
+  const parts = useMemo(() => {
+    scene.updateMatrixWorld(true);
+    const out: { geometry: THREE.BufferGeometry; material: THREE.Material; local: THREE.Matrix4 }[] = [];
+    scene.traverse((o) => {
+      if (o instanceof THREE.Mesh) out.push({ geometry: o.geometry, material: o.material as THREE.Material, local: o.matrixWorld.clone() });
+    });
+    return out;
+  }, [scene]);
+  const refs = useRef<(THREE.InstancedMesh | null)[]>([]);
   useLayoutEffect(() => {
-    const b = body.current;
-    const c = cabin.current;
-    if (!b || !c) return;
+    const car = new THREE.Matrix4();
     const m = new THREE.Matrix4();
     const q = new THREE.Quaternion();
     const up = new THREE.Vector3(0, 1, 0);
-    const color = new THREE.Color();
-    layout.parked.forEach((p, i) => {
-      q.setFromAxisAngle(up, p.rot);
-      m.compose(new THREE.Vector3(p.x, 0.55, p.z), q, new THREE.Vector3(1.8, 0.8, 4.2));
-      b.setMatrixAt(i, m);
-      b.setColorAt(i, color.set(PARKED_COLORS[(p.y ?? 0) % PARKED_COLORS.length]));
-      m.compose(new THREE.Vector3(p.x, 1.2, p.z), q, new THREE.Vector3(1.6, 0.55, 2.2));
-      c.setMatrixAt(i, m);
-    });
-    for (const mesh of [b, c]) {
+    parts.forEach((part, k) => {
+      const mesh = refs.current[k];
+      if (!mesh) return;
+      spots.forEach((s, i) => {
+        car.compose(new THREE.Vector3(s.x, 0, s.z), q.setFromAxisAngle(up, s.rot), new THREE.Vector3(1, 1, 1));
+        mesh.setMatrixAt(i, m.multiplyMatrices(car, part.local));
+      });
       mesh.instanceMatrix.needsUpdate = true;
-      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
       mesh.computeBoundingSphere();
-    }
+    });
+  }, [parts, spots]);
+  return (
+    <group>
+      {parts.map((part, k) => (
+        <instancedMesh key={k} ref={(m) => void (refs.current[k] = m)} args={[part.geometry, part.material, spots.length]} castShadow receiveShadow />
+      ))}
+    </group>
+  );
+}
+
+/** Rows of real parked cars behind the pits. */
+export function CarPark({ layout }: { layout: Layout }) {
+  const byModel = useMemo(() => {
+    const groups = PACK_CARS.map(() => [] as { x: number; z: number; rot: number }[]);
+    for (const p of layout.parked) groups[(p.y ?? 0) % PACK_CARS.length].push(p);
+    return groups;
   }, [layout]);
   if (layout.parked.length === 0) return null;
   return (
     <group>
-      <instancedMesh ref={body} args={[undefined, undefined, layout.parked.length]} castShadow receiveShadow>
-        <boxGeometry />
-        <meshStandardMaterial metalness={0.5} roughness={0.35} />
-      </instancedMesh>
-      <instancedMesh ref={cabin} args={[undefined, undefined, layout.parked.length]} castShadow>
-        <boxGeometry />
-        <meshStandardMaterial color="#222a33" metalness={0.8} roughness={0.15} />
-      </instancedMesh>
+      {PACK_CARS.map((name, i) => (byModel[i].length > 0 ? <ParkedModel key={name} name={name} spots={byModel[i]} /> : null))}
     </group>
   );
 }

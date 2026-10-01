@@ -4,6 +4,8 @@ import { useMemo } from "react";
 import * as THREE from "three";
 import { hashString, mulberry32 } from "@/sim/rng";
 import type { Track } from "@/sim";
+import { grassMaterial, pbr } from "./materials";
+import type { HeightFn } from "./terrain";
 
 const KERB_WIDTH = 1.2;
 
@@ -56,61 +58,23 @@ function stripGeometry(
   return g;
 }
 
-/**
- * Procedural surface texture (seeded, so it looks the same every load): soft large-scale blotches for
- * natural variation, plus a faint fine grain so it doesn't look flat up close. Tiles seamlessly.
- */
-function surfaceTexture(base: string, tones: string[], seed: number, repeat: number, grain: number) {
-  const S = 512;
-  const c = document.createElement("canvas");
-  c.width = c.height = S;
-  const ctx = c.getContext("2d")!;
-  const rand = mulberry32(seed);
-  ctx.fillStyle = base;
-  ctx.fillRect(0, 0, S, S);
-  const blob = (x: number, y: number, r: number, color: string, alpha: number) => {
-    // Draw wrapped copies so the texture tiles without seams.
-    for (const dx of [-S, 0, S])
-      for (const dy of [-S, 0, S]) {
-        const g = ctx.createRadialGradient(x + dx, y + dy, 0, x + dx, y + dy, r);
-        g.addColorStop(0, color);
-        g.addColorStop(1, "transparent");
-        ctx.globalAlpha = alpha;
-        ctx.fillStyle = g;
-        ctx.fillRect(x + dx - r, y + dy - r, r * 2, r * 2);
-      }
-  };
-  for (let k = 0; k < 140; k++) blob(rand() * S, rand() * S, 30 + rand() * 110, tones[Math.floor(rand() * tones.length)], 0.18);
-  for (let k = 0; k < 6000; k++) {
-    ctx.globalAlpha = grain * (0.5 + rand() * 0.5);
-    ctx.fillStyle = rand() < 0.5 ? "#000" : "#fff";
-    ctx.fillRect(rand() * S, rand() * S, 1, 1);
-  }
-  ctx.globalAlpha = 1;
-  const t = new THREE.CanvasTexture(c);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.repeat.set(repeat, repeat);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 16;
-  return t;
-}
-
 export function Road({ track }: { track: Track }) {
   const hw = track.halfWidth;
-  const { road, kerbs, lines, tarmac } = useMemo(() => {
+  const { road, kerbs, lines, asphalt } = useMemo(() => {
     const red = new THREE.Color("#d63a2f");
     const white = new THREE.Color("#f2f2f2");
     const kerbColor = (i: number) => (Math.floor(i / 2) % 2 ? red : white);
     const kerbs = [stripGeometry(track, hw, hw + KERB_WIDTH, 0.03, kerbColor), stripGeometry(track, -hw, -hw - KERB_WIDTH, 0.03, kerbColor)];
     const lines = [stripGeometry(track, hw - 0.7, hw - 0.4, 0.025), stripGeometry(track, -hw + 0.7, -hw + 0.4, 0.025)];
-    const tarmac = surfaceTexture("#4a4e54", ["#3c4046", "#565a60", "#44484e"], 11, 1, 0.05);
-    return { road: stripGeometry(track, -hw, hw, 0.02), kerbs, lines, tarmac };
+    // Road UVs span the 14 m width once; repeat 4 = one scanned asphalt tile per 3.5 m.
+    const asphalt = pbr("asphalt", 4);
+    return { road: stripGeometry(track, -hw, hw, 0.02), kerbs, lines, asphalt };
   }, [track, hw]);
 
   return (
     <group>
       <mesh geometry={road} receiveShadow>
-        <meshStandardMaterial map={tarmac} roughness={0.9} />
+        <meshStandardMaterial {...asphalt} color="#b9bcc0" roughness={1} normalScale={[0.8, 0.8]} />
       </mesh>
       {kerbs.map((g, i) => (
         <mesh key={i} geometry={g} receiveShadow>
@@ -192,54 +156,25 @@ export function GatePosts({ track }: { track: Track }) {
   );
 }
 
-/** Mowed-stripe grass: broad alternating light/dark bands with soft variation, like a circuit's infield. */
-function mowedGrassTexture() {
-  const S = 512;
-  const c = document.createElement("canvas");
-  c.width = c.height = S;
-  const ctx = c.getContext("2d")!;
-  const rand = mulberry32(31);
-  const bands = 8;
-  for (let b = 0; b < bands; b++) {
-    ctx.fillStyle = b % 2 ? "#5d9a3a" : "#4f8a31";
-    ctx.fillRect((b * S) / bands, 0, S / bands, S);
-  }
-  // Soft blotches and fine grain so the stripes don't look painted on.
-  for (let k = 0; k < 160; k++) {
-    const x = rand() * S;
-    const y = rand() * S;
-    const r = 20 + rand() * 80;
-    for (const dx of [-S, 0, S])
-      for (const dy of [-S, 0, S]) {
-        const g = ctx.createRadialGradient(x + dx, y + dy, 0, x + dx, y + dy, r);
-        g.addColorStop(0, rand() < 0.5 ? "rgba(40,70,25,0.12)" : "rgba(140,170,80,0.10)");
-        g.addColorStop(1, "transparent");
-        ctx.fillStyle = g;
-        ctx.fillRect(x + dx - r, y + dy - r, r * 2, r * 2);
-      }
-  }
-  for (let k = 0; k < 9000; k++) {
-    ctx.fillStyle = rand() < 0.5 ? "rgba(0,0,0,0.06)" : "rgba(255,255,255,0.05)";
-    ctx.fillRect(rand() * S, rand() * S, 1, 1);
-  }
-  const t = new THREE.CanvasTexture(c);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.repeat.set(60, 60); // ~6 m wide stripes
-  t.center.set(0.5, 0.5);
-  t.rotation = 0.6;
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 16;
-  return t;
-}
-
-export function Ground() {
-  const grass = useMemo(() => mowedGrassTexture(), []);
-  return (
-    <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-      <planeGeometry args={[3000, 3000]} />
-      <meshStandardMaterial map={grass} roughness={1} />
-    </mesh>
-  );
+/** Grass terrain: flat around the circuit, rolling hills beyond. Stripes and colour variation come from the shader. */
+export function Ground({ height }: { height: HeightFn }) {
+  const geometry = useMemo(() => {
+    const SIZE = 3200;
+    const SEG = 256;
+    const g = new THREE.PlaneGeometry(SIZE, SIZE, SEG, SEG).rotateX(-Math.PI / 2);
+    const pos = g.getAttribute("position");
+    for (let i = 0; i < pos.count; i++) pos.setY(i, height(pos.getX(i), pos.getZ(i)));
+    g.computeVertexNormals();
+    return g;
+  }, [height]);
+  const material = useMemo(() => {
+    const m = grassMaterial();
+    // Plane UVs run 0..1 across 3200 m; the normal map tiles every ~3 m.
+    m.normalMap?.repeat.set(1067, 1067);
+    m.roughnessMap?.repeat.set(1067, 1067);
+    return m;
+  }, []);
+  return <mesh geometry={geometry} material={material} receiveShadow />;
 }
 
 /** Green-painted asphalt run-off just beyond the kerbs (gravel traps draw over it on corners). */
@@ -260,7 +195,7 @@ export function RunOff({ track }: { track: Track }) {
 }
 
 /** Round broadleaf trees and a few conifers, grouped into clumps and tree lines. Scenery only. */
-export function Trees({ track, reserved }: { track: Track; reserved: { x: number; z: number; r: number }[] }) {
+export function Trees({ track, reserved, height }: { track: Track; reserved: { x: number; z: number; r: number }[]; height: HeightFn }) {
   const { trunks, round, conifer } = useMemo(() => {
     const rand = mulberry32(hashString(track.seed + ":trees"));
     // Clear of the road, run-off, gravel and tyre walls.
@@ -280,16 +215,17 @@ export function Trees({ track, reserved }: { track: Track; reserved: { x: number
       const s = 0.8 + rand() * 0.8;
       const color = new THREE.Color(greens[Math.floor(rand() * greens.length)]);
       q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand() * 6.28);
-      trunks.push(new THREE.Matrix4().compose(new THREE.Vector3(x, 1.5 * s, z), q, new THREE.Vector3(s, s, s)));
+      const y = height(x, z);
+      trunks.push(new THREE.Matrix4().compose(new THREE.Vector3(x, y + 1.5 * s, z), q, new THREE.Vector3(s, s, s)));
       if (rand() < 0.75) {
         const w = s * (0.9 + rand() * 0.4);
-        round.push({ m: new THREE.Matrix4().compose(new THREE.Vector3(x, 4.6 * s, z), q, new THREE.Vector3(w, s * (0.8 + rand() * 0.3), w)), c: color });
+        round.push({ m: new THREE.Matrix4().compose(new THREE.Vector3(x, y + 4.6 * s, z), q, new THREE.Vector3(w, s * (0.8 + rand() * 0.3), w)), c: color });
       } else {
-        conifer.push({ m: new THREE.Matrix4().compose(new THREE.Vector3(x, 5 * s, z), q, new THREE.Vector3(s, s, s)), c: color });
+        conifer.push({ m: new THREE.Matrix4().compose(new THREE.Vector3(x, y + 5 * s, z), q, new THREE.Vector3(s, s, s)), c: color });
       }
     }
     return { trunks, round, conifer };
-  }, [track, reserved]);
+  }, [track, reserved, height]);
 
   const fill = (items: { m: THREE.Matrix4; c?: THREE.Color }[]) => (mesh: THREE.InstancedMesh | null) => {
     if (!mesh) return;

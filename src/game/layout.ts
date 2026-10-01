@@ -374,6 +374,7 @@ export function buildLayout(track: Track): Layout {
 
 
   // --- Hospitality marquees behind the pits, car parks beyond. ---
+  const placed: Layout["reserved"] = [];
   for (let i = -24; i <= 24; i += 6) {
     const f = frame(track, i);
     for (const [off, kind] of [
@@ -386,13 +387,16 @@ export function buildLayout(track: Track): Layout {
       const p = at(f, pSide * off);
       if (clearance(track, p.x, p.z) < off - 4 || isReserved(p.x, p.z, 4)) continue;
       if (kind === "tent") tents.push({ ...p, rot: f.rot });
-      else for (let a = -5; a <= 5; a += 2.6) parked.push({ ...at(f, pSide * off, a), rot: f.rot + Math.PI / 2, y: Math.floor(rand() * 8) });
+      else for (let a = -5; a <= 5; a += 2.6) parked.push({ ...at(f, pSide * off, a), rot: f.rot + Math.PI / 2, y: Math.floor(rand() * 10) });
+      placed.push({ ...p, r: 9 });
     }
   }
   if (tower) {
     reserved.push({ x: tower.x, z: tower.z, r: 6 });
     tvSpots.push({ x: tower.x, y: 26, z: tower.z }); // high shot over the main straight
   }
+
+  reserved.push(...placed); // keep the terrain flat (and trees out) under tents and parked cars
 
   // --- Team transporters parked in the paddock behind the garages. ---
   let screen: Spot | null = null;

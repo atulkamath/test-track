@@ -1,8 +1,9 @@
 "use client";
 
 import { Canvas, useFrame } from "@react-three/fiber";
-import { Environment, Lightformer, Sky } from "@react-three/drei";
-import { Bloom, EffectComposer, HueSaturation, N8AO, SMAA, Vignette } from "@react-three/postprocessing";
+import { Environment } from "@react-three/drei";
+import { Bloom, EffectComposer, HueSaturation, N8AO, SMAA, ToneMapping, Vignette } from "@react-three/postprocessing";
+import { ToneMappingMode } from "postprocessing";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { COS, DOWN, LEFT, RIGHT, SIN, UP, generateTrack, type Track } from "@/sim";
@@ -12,7 +13,7 @@ import { animateCar, Car, newCarAnim, PLAYER_MODEL } from "./Car";
 import { Cockpit, EYE, type CockpitHandle } from "./Cockpit";
 import { Gearbox } from "./gearbox";
 import { Crowd } from "./Crowd";
-import { BigScreen, Blimp, Clouds, Helicopter, Lake, Paddock } from "./Life";
+import { BigScreen, Blimp, Helicopter, Lake, Paddock } from "./Life";
 import { Obstacles, SkidMarks, Traffic, type SkidHandle } from "./Dynamic";
 import { Engine, formatTicks } from "./engine";
 import { FinishLine, GatePosts, Ground, Road, RunOff, Trees } from "./Scene";
@@ -20,6 +21,7 @@ import { Tacho, type TachoHandle } from "./Tacho";
 import { Pylons, Ridges, Town } from "./Background";
 import { CarPark, CircuitBoxes, FerrisWheel, Flags, GravelTraps, Tents, TimingTower } from "./Circuit";
 import { buildLayout, type Layout } from "./layout";
+import { makeHeight } from "./terrain";
 import { Billboards } from "./Trackside";
 import styles from "./game.module.css";
 
@@ -143,8 +145,8 @@ function Driver({
     <>
       <directionalLight
         ref={sun}
-        intensity={2.8}
-        color="#fff4e4"
+        intensity={3.2}
+        color="#fff1dc"
         castShadow
         shadow-mapSize={[4096, 4096]}
         shadow-camera-left={-80}
@@ -169,27 +171,25 @@ function Driver({
   );
 }
 
-/** Clear early-afternoon sun. Used for both the sky shader and the shadow-casting light. */
-const SUN_DIR = new THREE.Vector3(300, 240, 140).normalize();
+// Sky: "Kloofendal 48d Partly Cloudy (Pure Sky)" from Poly Haven (CC0). It is both the visible sky and the
+// light source. The two values below were measured from the HDR file so the scene matches it:
+/** Direction to the sun in the sky image (48° up); the shadow-casting light shines from here. */
+const SUN_DIR = new THREE.Vector3(0.554, 0.742, 0.378).normalize();
+/** Average linear radiance of the sky just above the horizon; used as the haze colour so distance fades into the sky. */
+const HORIZON = new THREE.Color().setRGB(0.45, 0.48, 0.59, THREE.LinearSRGBColorSpace);
 
 function World({ track, layout }: { track: Track; layout: Layout }) {
+  const height = useMemo(() => makeHeight(track, layout), [track, layout]);
   return (
     <>
-      <color attach="background" args={["#b9d3ea"]} />
-      <Sky sunPosition={SUN_DIR.clone().multiplyScalar(1000).toArray()} turbidity={2.2} rayleigh={0.7} mieCoefficient={0.004} mieDirectionalG={0.8} />
-      <fog attach="fog" args={["#c6d8e8", 420, 2900]} />
-      <hemisphereLight args={["#e2edfa", "#5d7a3e", 0.8]} />
-      {/* Local reflection map (no network): bright sky above, a warm strip toward the sun, a few highlights. */}
-      <Environment resolution={256} environmentIntensity={0.6}>
-        <Lightformer form="rect" intensity={2} color="#d6e6f7" position={[0, 12, 0]} rotation-x={Math.PI / 2} scale={[40, 40, 1]} />
-        <Lightformer form="rect" intensity={5} color="#fff1dc" position={SUN_DIR.clone().multiplyScalar(15).toArray()} scale={[14, 3, 1]} target={[0, 0, 0]} />
-        <Lightformer form="rect" intensity={3} position={[-8, 5, -6]} rotation-y={Math.PI / 3} scale={[12, 1.2, 1]} />
-        <Lightformer form="rect" intensity={1} color="#4f7a3a" position={[0, -6, 0]} rotation-x={-Math.PI / 2} scale={[40, 40, 1]} />
-      </Environment>
-      <Ground />
+      <Suspense fallback={<color attach="background" args={["#9fb4cc"]} />}>
+        <Environment files="/env/sky_2k.hdr" background environmentIntensity={0.55} />
+      </Suspense>
+      <fog attach="fog" args={[HORIZON, 350, 3000]} />
+      <Ground height={height} />
       <Ridges track={track} />
-      <Town track={track} />
-      <Pylons track={track} />
+      <Town track={track} height={height} />
+      <Pylons track={track} height={height} />
       <RunOff track={track} />
       <Road track={track} />
       <GravelTraps track={track} layout={layout} />
@@ -201,12 +201,13 @@ function World({ track, layout }: { track: Track; layout: Layout }) {
       <Billboards track={track} layout={layout} />
       <GatePosts track={track} />
       <Tents layout={layout} />
-      <CarPark layout={layout} />
+      <Suspense fallback={null}>
+        <CarPark layout={layout} />
+      </Suspense>
       <Paddock layout={layout} />
       <Lake layout={layout} />
-      <Clouds track={track} />
       <Blimp track={track} />
-      <Trees track={track} reserved={layout.reserved} />
+      <Trees track={track} reserved={layout.reserved} height={height} />
     </>
   );
 }
@@ -220,6 +221,8 @@ function Effects({ ao }: { ao: boolean }) {
       <Bloom mipmapBlur luminanceThreshold={0.9} luminanceSmoothing={0.15} intensity={0.3} />
       <HueSaturation saturation={0.06} />
       <Vignette offset={0.35} darkness={0.35} />
+      {/* The composer switches the renderer's own tone mapping off, so do it here: HDR light -> filmic screen colours. */}
+      <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
       <SMAA />
     </EffectComposer>
   );

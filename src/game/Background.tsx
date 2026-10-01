@@ -7,6 +7,7 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { hashString, mulberry32 } from "@/sim/rng";
 import type { Track } from "@/sim";
+import type { HeightFn } from "./terrain";
 
 interface Placed {
   x: number;
@@ -65,7 +66,7 @@ const WALLS = ["#eeeae2", "#e2ddd2", "#d6d3cc", "#f3f1ec", "#c9c3b8", "#d9cfc0",
 const ROOFS = ["#3d4655", "#4a5160", "#5a4a42", "#2f3a4a", "#6b3b32", "#56606b", "#3a3f46"];
 const BLOCKS = ["#e6e3dc", "#d3d6d9", "#c9ccc9", "#ecebe6", "#b8bec4"];
 
-export function Town({ track }: { track: Track }) {
+export function Town({ track, height }: { track: Track; height: HeightFn }) {
   const { houses, roofs, blocks } = useMemo(() => {
     const rand = mulberry32(hashString(track.seed + ":town"));
     const { cx, cz, r } = trackExtent(track);
@@ -84,17 +85,19 @@ export function Town({ track }: { track: Track }) {
       // Streets run roughly on a grid, so align houses to one of two directions.
       const rot = (Math.floor(rand() * 2) * Math.PI) / 2 + 0.35;
       if (rand() < 0.03) {
-        blocks.push({ x, z, rot, w: 14 + rand() * 12, h: 12 + rand() * 22, d: 10 + rand() * 5, color: c(BLOCKS) });
+        blocks.push({ x, y: height(x, z) - 1, z, rot, w: 14 + rand() * 12, h: 12 + rand() * 22, d: 10 + rand() * 5, color: c(BLOCKS) });
         continue;
       }
       const w = 7 + rand() * 5;
       const dd = 7 + rand() * 4;
       const h = 4 + rand() * 3.5;
-      houses.push({ x, z, rot, w, h, d: dd, color: c(WALLS) });
-      roofs.push({ x, y: h, z, rot, w: w + 0.8, h: 1.6 + rand() * 0.8, d: dd + 0.8, color: c(ROOFS) });
+      // Sink the base 1 m so houses on a slope never float.
+      const y = height(x, z) - 1;
+      houses.push({ x, y, z, rot, w, h: h + 1, d: dd, color: c(WALLS) });
+      roofs.push({ x, y: y + h + 1, z, rot, w: w + 0.8, h: 1.6 + rand() * 0.8, d: dd + 0.8, color: c(ROOFS) });
     }
     return { houses, roofs, blocks };
-  }, [track]);
+  }, [track, height]);
 
   const unitBox = useMemo(() => new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0), []);
   // Hip roof: a squashed 4-sided pyramid.
@@ -140,7 +143,7 @@ function pylonGeometry() {
   return mergeGeometries(parts.map((p) => (p.index ? p.toNonIndexed() : p)))!;
 }
 
-export function Pylons({ track }: { track: Track }) {
+export function Pylons({ track, height }: { track: Track; height: HeightFn }) {
   const { towers, wires } = useMemo(() => {
     const rand = mulberry32(hashString(track.seed + ":pylons"));
     const { cx, cz, r } = trackExtent(track);
@@ -151,8 +154,12 @@ export function Pylons({ track }: { track: Track }) {
     const oz = cz + Math.sin(a) * off;
     const dx = -Math.sin(a);
     const dz = Math.cos(a);
-    const towers: { x: number; z: number; rot: number }[] = [];
-    for (let k = -8; k <= 8; k++) towers.push({ x: ox + dx * k * 110, z: oz + dz * k * 110, rot: Math.atan2(dx, dz) }); // arms (local x) across the line
+    const towers: { x: number; y: number; z: number; rot: number }[] = [];
+    for (let k = -8; k <= 8; k++) {
+      const x = ox + dx * k * 110;
+      const z = oz + dz * k * 110;
+      towers.push({ x, y: height(x, z) - 0.5, z, rot: Math.atan2(dx, dz) }); // arms (local x) across the line
+    }
     // Sagging wires between arm tips.
     const pts: number[] = [];
     const arms: [number, number][] = [
@@ -174,7 +181,7 @@ export function Pylons({ track }: { track: Track }) {
         for (let j = 0; j < N; j++) {
           for (const u of [j / N, (j + 1) / N]) {
             const sag = 4 * u * (1 - u) * 3.5;
-            pts.push(t0.x + (t1.x - t0.x) * u + px, ay - sag, t0.z + (t1.z - t0.z) * u + pz);
+            pts.push(t0.x + (t1.x - t0.x) * u + px, t0.y + (t1.y - t0.y) * u + ay - sag, t0.z + (t1.z - t0.z) * u + pz);
           }
         }
       }
@@ -182,7 +189,7 @@ export function Pylons({ track }: { track: Track }) {
     const wires = new THREE.BufferGeometry();
     wires.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
     return { towers, wires };
-  }, [track]);
+  }, [track, height]);
   const geometry = useMemo(() => pylonGeometry(), []);
   const ref = useRef<THREE.InstancedMesh>(null);
   useLayoutEffect(() => {
@@ -192,7 +199,7 @@ export function Pylons({ track }: { track: Track }) {
     const q = new THREE.Quaternion();
     towers.forEach((t, i) => {
       q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), t.rot);
-      m.compose(new THREE.Vector3(t.x, 0, t.z), q, new THREE.Vector3(1, 1, 1));
+      m.compose(new THREE.Vector3(t.x, t.y, t.z), q, new THREE.Vector3(1, 1, 1));
       mesh.setMatrixAt(i, m);
     });
     mesh.instanceMatrix.needsUpdate = true;

@@ -18,7 +18,7 @@ const SHOULDER_L = new THREE.Vector3(0.6, 1.06, -0.3);
 const SHOULDER_R = new THREE.Vector3(0.16, 1.06, -0.3);
 /** How long the hand spends reaching for the lever and back (seconds). */
 const SHIFT_TIME = 0.65;
-const PAINT = "#d23a2c";
+const PAINT = "#dcbf10"; // matches the Azura's yellow
 const SUIT = "#b3261e";
 const GLOVE = "#23272e";
 

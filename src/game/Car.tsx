@@ -4,15 +4,13 @@ import { useGLTF } from "@react-three/drei";
 import { forwardRef, useMemo } from "react";
 import * as THREE from "three";
 
-// Kenney Car Kit (CC0) — see CREDITS.md. Models face +z, which matches sim heading 0.
-export const PLAYER_MODEL = "sedan-sports";
-export const BOT_MODELS = ["hatchback-sports", "race-future", "race", "sedan"];
+// Player: Generic Coupe "Azura" by mk2design. AI: Generic passenger car pack by Comrade1280. Both CC-BY 4.0,
+// see CREDITS.md. scripts/convert-cars.mjs normalises them: real-world metres, origin on the ground,
+// +z forward, a "body" node and four "wheel-*" pivots, wheel radius in userData.
+export const PLAYER_MODEL = "azura";
+export const BOT_MODELS = ["cars/coupe", "cars/sedan", "cars/hatchback", "cars/sport"];
 const url = (model: string) => `/models/${model}.glb`;
 
-/** Kenney cars are ~2.5 units long; scale to the ~3.8 m footprint the sim's collision circles assume. */
-export const CAR_SCALE = 1.5;
-/** Wheel radius in world units (model wheel radius 0.3). */
-export const WHEEL_RADIUS = 0.3 * CAR_SCALE;
 const FRONT_WHEELS = ["wheel-front-left", "wheel-front-right"];
 const ALL_WHEELS = [...FRONT_WHEELS, "wheel-back-left", "wheel-back-right"];
 
@@ -20,55 +18,42 @@ export const Car = forwardRef<THREE.Group, { model: string }>(function Car({ mod
   const { scene } = useGLTF(url(model));
   const root = useMemo(() => {
     const root = scene.clone(true);
-    let body: THREE.Mesh | null = null;
+    // Tail-light lenses glow when braking. Clone them so each car instance lights independently.
+    const brake: THREE.MeshStandardMaterial[] = [];
     root.traverse((o) => {
       if (!(o instanceof THREE.Mesh)) return;
       o.castShadow = true;
-      if (o.name === "body") body = o;
-      if (o.name === "body" || o.name === "spoiler") {
-        // Glossy clear-coat paint that reflects the sky.
-        o.material = new THREE.MeshPhysicalMaterial({
-          map: (o.material as THREE.MeshStandardMaterial).map,
-          metalness: 0.25,
-          roughness: 0.32,
-          clearcoat: 1,
-          clearcoatRoughness: 0.06,
-          envMapIntensity: 1.4,
-        });
+      o.receiveShadow = true;
+      const mat = o.material as THREE.MeshStandardMaterial;
+      if (/glass_red/i.test(mat.name)) {
+        const lens = mat.clone();
+        lens.emissive = new THREE.Color("#ff1a0a");
+        lens.emissiveIntensity = 0.2;
+        o.material = lens;
+        brake.push(lens);
       }
     });
     for (const name of ALL_WHEELS) {
       const w = root.getObjectByName(name);
       if (w) w.rotation.order = "YXZ"; // steer (Y) first, then roll (X)
     }
-
-    // Brake lights: two small emissive panels on the tail, sized from the body's bounding box.
-    const brake = new THREE.MeshStandardMaterial({ color: "#5a0c0c", emissive: "#ff2a1a", emissiveIntensity: 0.15 });
-    if (body) {
-      const b = body as THREE.Mesh;
-      b.geometry.computeBoundingBox();
-      const box = b.geometry.boundingBox!;
-      const w = box.max.x - box.min.x;
-      const h = box.max.y - box.min.y;
-      for (const s of [-1, 1]) {
-        const light = new THREE.Mesh(new THREE.BoxGeometry(w * 0.2, h * 0.09, 0.03), brake);
-        light.position.set(s * w * 0.3, box.min.y + h * 0.45, box.min.z - 0.005);
-        b.add(light);
-      }
-    }
     root.userData.brake = brake;
+    root.userData.wheelRadius = (root.children[0]?.userData.wheelRadius as number | undefined) ?? 0.3;
     return root;
   }, [scene]);
 
   return (
     <group ref={ref}>
-      <primitive object={root} scale={CAR_SCALE} />
+      <primitive object={root} />
     </group>
   );
 });
 
 /** Per-car animation memory (smoothed values between frames). */
 export interface CarAnim {
+  /** Looked up from the model on first use. */
+  wheelRadius?: number;
+  brake?: THREE.MeshStandardMaterial[];
   steer: number;
   pitch: number;
   roll: number;
@@ -85,11 +70,19 @@ export const newCarAnim = (): CarAnim => ({ steer: 0, pitch: 0, roll: 0, lastSpe
 export function animateCar(group: THREE.Group, anim: CarAnim, speed: number, angle: number, steer: number, braking: boolean, delta: number) {
   if (delta <= 0) return;
   const k = (rate: number) => 1 - Math.exp(-delta * rate);
+  if (anim.wheelRadius === undefined) {
+    // The model loads asynchronously; wait until its root (with our userData) is in the group.
+    let found: THREE.Object3D | undefined;
+    group.traverse((o) => (found ??= o.userData.brake ? o : undefined));
+    if (!found) return;
+    anim.wheelRadius = found.userData.wheelRadius as number;
+    anim.brake = found.userData.brake as THREE.MeshStandardMaterial[];
+  }
   anim.steer += (steer * 0.4 - anim.steer) * k(12);
   for (const name of ALL_WHEELS) {
     const w = group.getObjectByName(name);
     if (!w) continue;
-    w.rotation.x += (speed * delta) / WHEEL_RADIUS;
+    w.rotation.x += (speed * delta) / anim.wheelRadius;
     if (FRONT_WHEELS.includes(name)) w.rotation.y = anim.steer;
   }
 
@@ -110,9 +103,7 @@ export function animateCar(group: THREE.Group, anim: CarAnim, speed: number, ang
     body.rotation.z = anim.roll;
   }
 
-  let brake: THREE.MeshStandardMaterial | undefined;
-  group.traverse((o) => (brake ??= o.userData.brake as THREE.MeshStandardMaterial | undefined));
-  if (brake) brake.emissiveIntensity = braking ? 3.5 : 0.15;
+  for (const lens of anim.brake ?? []) lens.emissiveIntensity = braking ? 4 : 0.2;
 }
 
 useGLTF.preload(url(PLAYER_MODEL));

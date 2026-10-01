@@ -56,32 +56,6 @@ export function crowdTexture() {
   });
 }
 
-/** Raked gravel: sandy brown with grain and faint rake lines running along the track. */
-export function gravelTexture() {
-  const t = canvasTexture(256, 256, (ctx) => {
-    const rand = mulberry32(19);
-    ctx.fillStyle = "#b39a78";
-    ctx.fillRect(0, 0, 256, 256);
-    for (let k = 0; k < 14000; k++) {
-      const v = rand();
-      ctx.fillStyle = v < 0.4 ? "rgba(90,70,50,0.35)" : v < 0.8 ? "rgba(220,205,180,0.35)" : "rgba(60,50,40,0.4)";
-      ctx.fillRect(rand() * 256, rand() * 256, 1 + (rand() < 0.2 ? 1 : 0), 1);
-    }
-    for (let k = 0; k < 18; k++) {
-      const x = rand() * 256;
-      ctx.strokeStyle = "rgba(80,62,45,0.18)";
-      ctx.lineWidth = 2 + rand() * 3;
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.bezierCurveTo(x + 6, 85, x - 6, 170, x, 256);
-      ctx.stroke();
-    }
-  });
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.anisotropy = 16;
-  return t;
-}
-
 /** One pit garage bay: roller door, team colour stripe, bay number. */
 export function garageTexture() {
   return canvasTexture(256, 128, (ctx) => {

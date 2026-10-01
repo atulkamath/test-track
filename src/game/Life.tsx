@@ -11,54 +11,6 @@ import { formatTicks, type Engine } from "./engine";
 import type { Layout } from "./layout";
 import { canvasTexture } from "./textures";
 
-function cloudTexture() {
-  return canvasTexture(256, 128, (ctx) => {
-    const rand = mulberry32(5);
-    for (let k = 0; k < 26; k++) {
-      const x = 40 + rand() * 176;
-      const y = 50 + rand() * 40 - Math.abs(x - 128) * 0.15;
-      const r = 18 + rand() * 30;
-      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-      g.addColorStop(0, "rgba(255,255,255,0.9)");
-      g.addColorStop(0.6, "rgba(250,252,255,0.5)");
-      g.addColorStop(1, "rgba(255,255,255,0)");
-      ctx.fillStyle = g;
-      ctx.fillRect(x - r, y - r, r * 2, r * 2);
-    }
-    // Slightly grey flat base like real cumulus.
-    const base = ctx.createLinearGradient(0, 60, 0, 128);
-    base.addColorStop(0, "rgba(0,0,0,0)");
-    base.addColorStop(1, "rgba(120,135,150,0.25)");
-    ctx.globalCompositeOperation = "source-atop";
-    ctx.fillStyle = base;
-    ctx.fillRect(0, 0, 256, 128);
-  });
-}
-
-export function Clouds({ track }: { track: Track }) {
-  const group = useRef<THREE.Group>(null);
-  const material = useMemo(() => new THREE.SpriteMaterial({ map: cloudTexture(), transparent: true, depthWrite: false, fog: false, opacity: 0.92 }), []);
-  const clouds = useMemo(() => {
-    const rand = mulberry32(hashString(track.seed + ":clouds"));
-    return Array.from({ length: 48 }, () => {
-      const a = rand() * Math.PI * 2;
-      const d = 250 + rand() * 2300;
-      const w = 220 + rand() * 420;
-      return { x: Math.cos(a) * d, z: Math.sin(a) * d, y: 230 + rand() * 220, w, h: w * (0.35 + rand() * 0.15) };
-    });
-  }, [track]);
-  useFrame((_, delta) => {
-    if (group.current) group.current.position.x += delta * 1.5; // slow drift
-  });
-  return (
-    <group ref={group}>
-      {clouds.map((c, i) => (
-        <sprite key={i} material={material} position={[c.x, c.y, c.z]} scale={[c.w, c.h, 1]} />
-      ))}
-    </group>
-  );
-}
-
 /** TV helicopter hovering above and to the side of the player's car. */
 export function Helicopter({ engine }: { engine: Engine }) {
   const heli = useRef<THREE.Group>(null);
