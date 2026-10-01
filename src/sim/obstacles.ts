@@ -96,6 +96,8 @@ export interface Wall {
 
 /** Barrier distance from the centreline on the straights and the inside of corners. */
 export const WALL_OFFSET = HALF_ROAD_PLUS_KERB + 3;
+/** On a street circuit: gap between the edge of the road and the wall. */
+export const STREET_WALL_GAP = 0.8;
 /** On the outside of a corner the barrier stands behind the gravel and the tyre wall. */
 export const WALL_OFFSET_CORNER = HALF_ROAD_PLUS_KERB + GRAVEL_WIDTH + 1.9;
 
@@ -107,7 +109,9 @@ export function generateWalls(track: Track): Wall[] {
   const walls: Wall[] = [];
   for (const side of [1, -1]) {
     const at = (i: number) => {
-      const off = side * (corners[i] === side ? WALL_OFFSET_CORNER : WALL_OFFSET);
+      // A street circuit's walls stand right at the edge of the road, all the way round.
+      const reach = track.kind === "street" ? track.halfWidth + STREET_WALL_GAP : corners[i] === side ? WALL_OFFSET_CORNER : WALL_OFFSET;
+      const off = side * reach;
       return { x: points[i].x - tangents[i].z * off, z: points[i].z + tangents[i].x * off };
     };
     for (let i = 0; i < n; i++) {

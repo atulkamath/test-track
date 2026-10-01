@@ -14,8 +14,12 @@ export interface Gate {
   t: Vec2;
 }
 
+/** "circuit": wide road with kerbs, gravel run-off and tyre walls. "street": narrow road with walls at the kerb. */
+export type TrackKind = "circuit" | "street";
+
 export interface Track {
   seed: string;
+  kind: TrackKind;
   /** Centreline, closed loop, evenly spaced (points[0] is the finish line). */
   points: Vec2[];
   /** Unit tangent at each point. */
@@ -30,6 +34,27 @@ export interface Track {
 }
 
 export const HALF_WIDTH = 7;
+
+/** Map id of the fixed street circuit. */
+export const STREET_SEED = "sakura";
+/** A street is narrower than a race circuit: 11 m of road between the walls' kerbs. */
+const STREET_HALF_WIDTH = 5.5;
+/**
+ * "Sakura Street": a hand-drawn lap of about 1.9 km (x east, z north, metres). Anticlockwise from the start
+ * line on the long south straight: up the east side along the canal, west through the esses, down the west
+ * side, then an old-town loop that doubles back through a hairpin before rejoining the main straight.
+ */
+const STREET_POINTS: Vec2[] = [
+  [-120, -140], [60, -140], [190, -140], // main straight, heading east
+  [240, -110], [255, -50], [250, 40], // east side, heading north (tunnel)
+  [225, 110], [160, 140], // north-east corner
+  [80, 125], [30, 150], [-30, 125], [-90, 150], // esses, heading west
+  [-160, 130], [-215, 80], [-200, 20], // west side, heading south
+  [-140, 0], [-60, 10], [0, -10], // into the old town, heading east
+  [40, -50], [0, -85], // hairpin
+  [-80, -75], [-160, -70], // back west through the old town
+  [-225, -90], [-240, -125], [-200, -142], // round onto the main straight
+].map(([x, z]) => ({ x, z }));
 const BASE_RADIUS = 150;
 const SPACING = 2;
 const GATE_COUNT = 8;
@@ -38,11 +63,13 @@ const GATE_HALF_LENGTH = HALF_WIDTH * 2.5;
 const MIN_SEPARATION = 40;
 const MAX_ATTEMPTS = 100;
 
+/** The seed doubles as the map id: the street circuit has a fixed name, anything else seeds a random circuit. */
 export function generateTrack(seed: string): Track {
+  if (seed === STREET_SEED) return build(seed, resample(catmullRom(STREET_POINTS), SPACING), "street", STREET_HALF_WIDTH);
   const rand = mulberry32(hashString(seed));
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const points = resample(catmullRom(controlPoints(rand)), SPACING);
-    if (isClean(points)) return build(seed, points);
+    if (isClean(points)) return build(seed, points, "circuit", HALF_WIDTH);
   }
   throw new Error(`no valid track for seed ${seed}`);
 }
@@ -126,7 +153,7 @@ function isClean(points: Vec2[]): boolean {
   return true;
 }
 
-function build(seed: string, points: Vec2[]): Track {
+function build(seed: string, points: Vec2[], kind: TrackKind, halfWidth: number): Track {
   const n = points.length;
   const tangents = points.map((_, i) => {
     const prev = points[(i - 1 + n) % n];
@@ -145,8 +172,9 @@ function build(seed: string, points: Vec2[]): Track {
     const nz = t.x * GATE_HALF_LENGTH;
     gates.push({ a: { x: p.x - nx, z: p.z - nz }, b: { x: p.x + nx, z: p.z + nz }, t });
   }
-  const track: Track = { seed, points, tangents, halfWidth: HALF_WIDTH, gates, obstacles: [], walls: [], length: n * SPACING };
-  track.obstacles = generateObstacles(track);
+  const track: Track = { seed, kind, points, tangents, halfWidth, gates, obstacles: [], walls: [], length: n * SPACING };
+  // A street circuit has no run-off, so nothing to put in it: no cones, no tyre walls.
+  if (kind === "circuit") track.obstacles = generateObstacles(track);
   track.walls = generateWalls(track);
   return track;
 }

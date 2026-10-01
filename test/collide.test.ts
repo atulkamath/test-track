@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createSim, replay, step, LEFT, RIGHT, UP, RUN_VERSION, WALL_OFFSET_CORNER, type CarState } from "../src/sim";
+import { createSim, replay, step, LEFT, RIGHT, STREET_SEED, STREET_WALL_GAP, UP, RUN_VERSION, WALL_OFFSET_CORNER, type CarState } from "../src/sim";
 import { headingFromVector } from "../src/sim/trig";
 import { collideCars } from "../src/sim/collide";
 
@@ -40,7 +40,7 @@ describe("collisions", () => {
   });
 
   it("barriers keep the car inside the circuit whatever the driver does", () => {
-    for (const seed of ["2026-10-01", "2026-10-02", "2026-10-03"]) {
+    for (const seed of ["2026-10-01", "2026-10-02", "2026-10-03", STREET_SEED]) {
       const sim = createSim(seed);
       sim.state.bots = [];
       let worst = 0;
@@ -51,7 +51,7 @@ describe("collisions", () => {
         const d = Math.min(...sim.track.points.map((p) => Math.hypot(p.x - x, p.z - z)));
         worst = Math.max(worst, d);
       }
-      expect(worst).toBeLessThan(WALL_OFFSET_CORNER + 0.5);
+      expect(worst).toBeLessThan((sim.track.kind === "street" ? sim.track.halfWidth + STREET_WALL_GAP : WALL_OFFSET_CORNER) + 0.5);
     }
   });
 

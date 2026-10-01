@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { createSim, generateTrack, hashState, racePosition, replay, step, DOWN, LAPS, LEFT, RIGHT, UP } from "../src/sim";
+import { createSim, generateTrack, hashState, racePosition, replay, step, DOWN, LAPS, LEFT, RIGHT, STREET_SEED, UP } from "../src/sim";
 import { autopilotInput, autopilotRun } from "./autopilot";
 
 /** A fixed, human-ish input script: accelerate, weave, brake. */
@@ -98,6 +98,48 @@ describe("race", () => {
     // The whole AI field keeps racing: every car has covered at least two laps by the time the player finishes.
     const n = sim.track.points.length;
     for (const p of sim.state.progress.slice(1)) expect(p / n).toBeGreaterThan(2);
+  });
+});
+
+describe("street circuit", () => {
+  const track = generateTrack(STREET_SEED);
+
+  it("is a fixed layout with walls at the kerb and no run-off furniture", () => {
+    expect(track.kind).toBe("street");
+    expect(generateTrack(STREET_SEED).points).toEqual(track.points);
+    expect(track.obstacles.length).toBe(0);
+    // Every wall segment is within a metre of the edge of the road.
+    for (const w of track.walls) {
+      const d = Math.min(...track.points.map((p) => Math.hypot(p.x - w.ax, p.z - w.az)));
+      expect(d).toBeLessThan(track.halfWidth + 1.2);
+      expect(d).toBeGreaterThan(track.halfWidth - 0.3);
+    }
+  });
+
+  it("no two parts of the lap are close enough for their buildings to collide", () => {
+    const P = track.points;
+    for (let i = 0; i < P.length; i += 3)
+      for (let j = i + 40; j < P.length; j += 3) {
+        if (P.length - (j - i) < 40) continue;
+        expect(Math.hypot(P[i].x - P[j].x, P[i].z - P[j].z)).toBeGreaterThan(45);
+      }
+  });
+
+  it("the autopilot races three laps, and the AI field stays between the walls", () => {
+    const sim = createSim(STREET_SEED);
+    let wallHugging = 0;
+    let samples = 0;
+    for (let t = 0; t < 60 * 420 && sim.state.lapTicks === null; t++) {
+      step(sim, autopilotInput(sim));
+      if (t % 30 === 0)
+        for (const b of sim.state.bots) {
+          samples++;
+          if (b.offRoad) wallHugging++;
+        }
+    }
+    expect(sim.state.lapTicks).not.toBeNull();
+    expect(sim.state.lap).toBe(LAPS);
+    expect(wallHugging / samples).toBeLessThan(0.1);
   });
 });
 
