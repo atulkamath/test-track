@@ -323,7 +323,8 @@ function Effects({ ao, modern }: { ao: boolean; modern: boolean }) {
         <sphereGeometry args={[70, 24, 16]} />
         <meshBasicMaterial color="#fff3d2" fog={false} toneMapped={false} />
       </mesh>
-      <EffectComposer multisampling={0}>
+      {/* autoClear off: the god-rays effect runs its own extra pass and needs the buffers left alone. */}
+      <EffectComposer multisampling={0} autoClear={false}>
         {/* AO off in the cockpit: surfaces centimetres from the lens would darken the whole view. */}
         <N8AO enabled={ao} aoRadius={2.5} distanceFalloff={1} intensity={2.2} quality="medium" halfRes />
         {modern && sun ? <GodRays sun={sun} samples={50} density={0.95} decay={0.93} weight={0.45} exposure={0.3} clampMax={1} blur /> : <></>}
