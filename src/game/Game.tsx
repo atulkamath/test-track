@@ -267,7 +267,9 @@ function World({ track, layout }: { track: Track; layout: Layout }) {
       <Paddock layout={layout} />
       <Lake layout={layout} />
       <Blimp track={track} />
-      <Trees track={track} reserved={layout.reserved} height={height} />
+      <Suspense fallback={null}>
+        <Trees track={track} reserved={layout.reserved} height={height} />
+      </Suspense>
     </>
   );
 }

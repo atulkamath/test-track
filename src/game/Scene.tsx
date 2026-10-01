@@ -1,5 +1,6 @@
 "use client";
 
+import { useGLTF } from "@react-three/drei";
 import { useMemo } from "react";
 import * as THREE from "three";
 import { hashString, mulberry32 } from "@/sim/rng";
@@ -213,64 +214,106 @@ export function RunOff({ track }: { track: Track }) {
   );
 }
 
-/** Round broadleaf trees and a few conifers, grouped into clumps and tree lines. Scenery only. */
+const MAPLES_URL = "/models/trees/maples.glb";
+
+/**
+ * Maple trees (Quaternius, CC0 — see CREDITS.md): five modelled trees with real trunks, branches and leaf
+ * clusters, instanced in clumps and tree lines. Most are in summer green, some in autumn red. Scenery only.
+ */
 export function Trees({ track, reserved, height }: { track: Track; reserved: { x: number; z: number; r: number }[]; height: HeightFn }) {
-  const { trunks, round, conifer } = useMemo(() => {
+  const { scene } = useGLTF(MAPLES_URL);
+
+  // Each tree in the file is a trunk mesh and a leaves mesh, laid out in a row. Bring each to its own origin.
+  const kinds = useMemo(() => {
+    scene.updateMatrixWorld(true);
+    const groups = new Map<string, THREE.Mesh[]>();
+    scene.traverse((o) => {
+      if (!(o instanceof THREE.Mesh)) return;
+      // Multi-material meshes load as a group of meshes named after the tree; fall back to the mesh's own name.
+      const name = /MapleTree_\d/.exec(o.name)?.[0] ?? /MapleTree_\d/.exec(o.parent?.name ?? "")?.[0];
+      if (name) groups.set(name, [...(groups.get(name) ?? []), o]);
+    });
+    return [...groups.values()].map((meshes) => {
+      const box = new THREE.Box3();
+      for (const m of meshes) box.expandByObject(m);
+      const shift = new THREE.Matrix4().makeTranslation(-(box.min.x + box.max.x) / 2, -box.min.y, -(box.min.z + box.max.z) / 2);
+      const parts = meshes.map((m) => ({
+        geometry: m.geometry.clone().applyMatrix4(m.matrixWorld).applyMatrix4(shift),
+        leaves: /leaves/i.test((m.material as THREE.Material).name),
+        source: m.material as THREE.MeshStandardMaterial,
+      }));
+      return { parts, height: box.max.y - box.min.y };
+    });
+  }, [scene]);
+
+  const materials = useMemo(() => {
+    const leaf = kinds.flatMap((k) => k.parts).find((p) => p.leaves)?.source;
+    const bark = kinds.flatMap((k) => k.parts).find((p) => !p.leaves)?.source;
+    const foliage = (map: THREE.Texture | null) => {
+      // Leaves are cut-out cards: alpha-test them (cheap, sorts correctly, casts leaf-shaped shadows).
+      const m = new THREE.MeshStandardMaterial({ map, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.85 });
+      return m;
+    };
+    const green = new THREE.TextureLoader().load("/textures/maple_leaves_green.webp");
+    green.colorSpace = THREE.SRGBColorSpace;
+    green.flipY = false; // glTF texture convention
+    return { bark: bark ?? new THREE.MeshStandardMaterial({ color: "#5e452e" }), green: foliage(green), autumn: foliage(leaf?.map ?? null) };
+  }, [kinds]);
+
+  // Where the trees go: clumps and lines, clear of the road, run-off, barriers and everything built.
+  const placed = useMemo(() => {
     const rand = mulberry32(hashString(track.seed + ":trees"));
-    // Clear of the road, run-off, gravel and tyre walls.
     const clear = track.halfWidth + 24;
     const clump = (x: number, z: number) => Math.sin(x * 0.021 + 0.7) * Math.sin(z * 0.017 + 1.9) + 0.6 * Math.sin((x + z) * 0.009);
-    const trunks: THREE.Matrix4[] = [];
-    const round: { m: THREE.Matrix4; c: THREE.Color }[] = [];
-    const conifer: { m: THREE.Matrix4; c: THREE.Color }[] = [];
     const q = new THREE.Quaternion();
-    const greens = ["#3f7a34", "#4a8a3a", "#355f2c", "#5a8f3e", "#2f5a2a"];
-    for (let tries = 0; tries < 20000 && trunks.length < 1800; tries++) {
+    const up = new THREE.Vector3(0, 1, 0);
+    // One list per tree kind and foliage colour.
+    const lists = kinds.map(() => ({ green: [] as THREE.Matrix4[], autumn: [] as THREE.Matrix4[] }));
+    let count = 0;
+    for (let tries = 0; tries < 20000 && count < 1000 && kinds.length > 0; tries++) {
       const x = (rand() - 0.5) * 1500;
       const z = (rand() - 0.5) * 1500;
       if (clump(x, z) < 0.35) continue;
       if (reserved.some((r) => (r.x - x) ** 2 + (r.z - z) ** 2 < r.r * r.r)) continue;
       if (track.points.some((p) => (p.x - x) ** 2 + (p.z - z) ** 2 < clear * clear)) continue;
-      const s = 0.8 + rand() * 0.8;
-      const color = new THREE.Color(greens[Math.floor(rand() * greens.length)]);
-      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand() * 6.28);
-      const y = height(x, z);
-      trunks.push(new THREE.Matrix4().compose(new THREE.Vector3(x, y + 1.5 * s, z), q, new THREE.Vector3(s, s, s)));
-      if (rand() < 0.75) {
-        const w = s * (0.9 + rand() * 0.4);
-        round.push({ m: new THREE.Matrix4().compose(new THREE.Vector3(x, y + 4.6 * s, z), q, new THREE.Vector3(w, s * (0.8 + rand() * 0.3), w)), c: color });
-      } else {
-        conifer.push({ m: new THREE.Matrix4().compose(new THREE.Vector3(x, y + 5 * s, z), q, new THREE.Vector3(s, s, s)), c: color });
-      }
+      const k = Math.floor(rand() * kinds.length);
+      // Scale every kind to a mature tree, 8-14 m tall.
+      const s = (8 + rand() * 6) / kinds[k].height;
+      q.setFromAxisAngle(up, rand() * Math.PI * 2);
+      const m = new THREE.Matrix4().compose(new THREE.Vector3(x, height(x, z) - 0.15, z), q, new THREE.Vector3(s, s * (0.9 + rand() * 0.2), s));
+      // Autumn colour comes in patches, like a stand of maples turning together.
+      (Math.sin(x * 0.011 + 2.3) * Math.sin(z * 0.013 + 0.9) > 0.45 ? lists[k].autumn : lists[k].green).push(m);
+      count++;
     }
-    return { trunks, round, conifer };
-  }, [track, reserved, height]);
+    return lists;
+  }, [track, reserved, height, kinds]);
 
-  const fill = (items: { m: THREE.Matrix4; c?: THREE.Color }[]) => (mesh: THREE.InstancedMesh | null) => {
+  const fill = (mats: THREE.Matrix4[]) => (mesh: THREE.InstancedMesh | null) => {
     if (!mesh) return;
-    items.forEach((it, i) => {
-      mesh.setMatrixAt(i, it.m);
-      if (it.c) mesh.setColorAt(i, it.c);
-    });
+    mats.forEach((m, i) => mesh.setMatrixAt(i, m));
     mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     mesh.computeBoundingSphere();
   };
 
   return (
     <group>
-      <instancedMesh ref={fill(trunks.map((m) => ({ m })))} args={[undefined, undefined, trunks.length]} castShadow>
-        <cylinderGeometry args={[0.22, 0.32, 3, 8]} />
-        <meshStandardMaterial color="#5e452e" roughness={0.95} />
-      </instancedMesh>
-      <instancedMesh ref={fill(round)} args={[undefined, undefined, round.length]} castShadow receiveShadow>
-        <icosahedronGeometry args={[2.9, 1]} />
-        <meshStandardMaterial roughness={0.9} flatShading />
-      </instancedMesh>
-      <instancedMesh ref={fill(conifer)} args={[undefined, undefined, conifer.length]} castShadow receiveShadow>
-        <coneGeometry args={[2, 6.5, 12]} />
-        <meshStandardMaterial roughness={0.9} />
-      </instancedMesh>
+      {kinds.map((kind, k) =>
+        (["green", "autumn"] as const).map((season) => {
+          const mats = placed[k]?.[season] ?? [];
+          if (mats.length === 0) return null;
+          return kind.parts.map((part, i) => (
+            <instancedMesh
+              key={`${k}-${season}-${i}`}
+              ref={fill(mats)}
+              args={[part.geometry, part.leaves ? materials[season] : materials.bark, mats.length]}
+              castShadow
+              receiveShadow
+            />
+          ));
+        }),
+      )}
     </group>
   );
 }
+
+useGLTF.preload(MAPLES_URL);

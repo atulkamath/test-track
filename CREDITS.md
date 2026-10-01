@@ -29,10 +29,16 @@ shadow plane removed, textures resized and converted to WebP.
 - Crowd and drivers: "Animated Human" by Quaternius — https://poly.pizza/m/c3Ibh9I3udk -> `public/models/people/man.glb`
   (simplified to 662 triangles by `scripts/convert-person.mjs`; posed and coloured in code)
 
+## Trees (CC0 — public domain, no credit required)
+
+- "Maple Trees" by Quaternius — https://poly.pizza/m/iGFtQd0PJO -> `public/models/trees/maples.glb`
+  (simplified by `scripts/convert-trees.mjs`; `public/textures/maple_leaves_green.webp` is its leaf texture
+  hue-shifted from autumn orange to green)
+
 ## Libraries
 three, @react-three/fiber, @react-three/drei, @react-three/postprocessing: MIT. postprocessing: Zlib. n8ao (ambient occlusion): ISC.
 HUD font: Exo 2 (SIL Open Font License), via next/font/google.
 
 ## Made in code
-Track, grandstands, distant spectators, trees, town, pylons, helicopter, blimp, cockpit wheel/hands/gauges, banners and all sound are generated in code.
+Track, grandstands, distant spectators, town, pylons, helicopter, blimp, cockpit wheel/hands/gauges, banners and all sound are generated in code.
 Sponsor names are invented.
