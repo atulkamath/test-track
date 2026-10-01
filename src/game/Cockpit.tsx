@@ -21,7 +21,7 @@ const RIM = 0.14;
 const GRIP_ANGLE = 0.61;
 /** Shifter on the centre console, far enough forward to be in shot. */
 const LEVER_LEN = 0.16;
-const LEVER_PIVOT = new THREE.Vector3(0.02, 0.6, 0.38);
+const LEVER_PIVOT = new THREE.Vector3(0.06, 0.66, 0.36);
 const SHOULDER_L = new THREE.Vector3(0.5, 0.8, -0.12);
 const SHOULDER_R = new THREE.Vector3(0.13, 0.8, -0.12);
 /** How long the hand spends reaching for the lever and back (seconds). */
@@ -164,21 +164,43 @@ function leverAngles(gear: number): [number, number] {
   return [fwd, gate];
 }
 
-/** A gloved fist gripping a bar that runs along local y: curled fingers wrap it, thumb on top, cuff behind. */
+/**
+ * A racing glove gripping a bar that runs along local y: four separate fingers wrap the bar, thumb over the top,
+ * padded back of the hand with a dark knuckle guard, and a cuff with a white band where it meets the sleeve.
+ */
 function Fist() {
+  const red = <meshStandardMaterial color={GLOVE} roughness={0.6} />;
+  const dark = <meshStandardMaterial color="#17181b" roughness={0.85} />;
   return (
     <group>
-      <mesh rotation={[Math.PI / 2, 0, Math.PI * 0.15]}>
-        <torusGeometry args={[0.032, 0.019, 8, 14, Math.PI * 1.45]} />
-        <meshStandardMaterial color={GLOVE} roughness={0.55} />
+      {[-0.03, -0.01, 0.01, 0.03].map((y, i) => (
+        <mesh key={y} position={[0, y, 0]} rotation={[Math.PI / 2, 0, Math.PI * 0.15]}>
+          <torusGeometry args={[i === 0 ? 0.027 : 0.03, 0.0096, 8, 16, Math.PI * 1.45]} />
+          {red}
+        </mesh>
+      ))}
+      {/* Back of the hand and knuckle guard */}
+      <mesh position={[0, 0, -0.038]} rotation={[Math.PI / 2, 0, 0]} scale={[1.2, 1, 1.45]}>
+        <capsuleGeometry args={[0.027, 0.03, 6, 14]} />
+        {red}
       </mesh>
-      <mesh position={[0, 0, -0.04]} rotation={[Math.PI / 2, 0, 0]} scale={[1.15, 1, 0.8]}>
-        <capsuleGeometry args={[0.03, 0.05, 6, 12]} />
-        <meshStandardMaterial color={GLOVE} roughness={0.55} />
+      <mesh position={[0.012, 0, -0.03]} rotation={[0, 0, 0]}>
+        <boxGeometry args={[0.03, 0.076, 0.014]} />
+        {dark}
       </mesh>
-      <mesh position={[0, 0.03, -0.012]} rotation={[0.9, 0, 0]}>
-        <capsuleGeometry args={[0.012, 0.035, 4, 8]} />
-        <meshStandardMaterial color={GLOVE} roughness={0.55} />
+      {/* Thumb */}
+      <mesh position={[0, 0.036, -0.012]} rotation={[0.9, 0, 0]}>
+        <capsuleGeometry args={[0.011, 0.035, 4, 8]} />
+        {red}
+      </mesh>
+      {/* Cuff: dark, with a white band */}
+      <mesh position={[0, 0, -0.085]} rotation={[Math.PI / 2, 0, 0]} scale={[1.15, 1, 0.85]}>
+        <cylinderGeometry args={[0.036, 0.04, 0.05, 16]} />
+        {dark}
+      </mesh>
+      <mesh position={[0, 0, -0.066]} rotation={[Math.PI / 2, 0, 0]} scale={[1.15, 1, 0.85]}>
+        <cylinderGeometry args={[0.0375, 0.0375, 0.008, 16]} />
+        <meshStandardMaterial color="#e9ecef" roughness={0.7} />
       </mesh>
     </group>
   );
@@ -206,6 +228,15 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
   const root = useRef<THREE.Group>(null);
   const cluster = useMemo(() => canvasTexture(512, 200), []);
   const knob = useMemo(() => knobTexture(), []);
+  // Flat-bottomed rim, like a modern sports wheel.
+  const rimGeometry = useMemo(() => {
+    const pts: THREE.Vector3[] = [];
+    for (let i = 0; i < 48; i++) {
+      const a = (i / 48) * Math.PI * 2;
+      pts.push(new THREE.Vector3(RIM * Math.cos(a), Math.max(RIM * Math.sin(a), -RIM * 0.78), 0));
+    }
+    return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts, true), 120, 0.021, 12, true);
+  }, []);
   const state = useRef({ gear: 1, steer: 0, shiftT: 1, lastDash: "", leverFrom: [0, 0] as [number, number] });
   const tmp = useMemo(
     () => ({ a: new THREE.Vector3(), b: new THREE.Vector3(), knob: new THREE.Vector3(), el: new THREE.Vector3(), q: new THREE.Quaternion() }),
@@ -290,35 +321,61 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
           </mesh>
         </group>
         <group ref={wheelSpin}>
-          <mesh>
-            <torusGeometry args={[RIM, 0.02, 14, 56]} />
-            {leather}
+          <mesh geometry={rimGeometry}>
+            <meshStandardMaterial color="#1c1d20" roughness={0.95} />
           </mesh>
-          {/* Yellow top-centre marker */}
+          {/* Red top-centre marker */}
           <mesh position={[0, RIM, 0]}>
-            <boxGeometry args={[0.018, 0.02, 0.052]} />
-            <meshStandardMaterial color="#f2c230" />
+            <boxGeometry args={[0.014, 0.046, 0.046]} />
+            <meshStandardMaterial color="#d8322b" roughness={0.6} />
           </mesh>
-          {/* Three spokes in brushed metal: left, right, bottom */}
+          {/* Three satin-black spokes with an aluminium inlay: left, right, bottom */}
           {(
             [
-              [0.078, 0, 0],
-              [-0.078, 0, 0],
-              [0, -0.078, Math.PI / 2],
+              [0.078, 0, 0, 0.13],
+              [-0.078, 0, 0, 0.13],
+              [0, -0.062, Math.PI / 2, 0.1],
             ] as const
-          ).map(([x, y, rz]) => (
-            <mesh key={`${x},${y}`} position={[x, y, 0.004]} rotation={[0, 0, rz]}>
-              <boxGeometry args={[0.13, 0.03, 0.012]} />
+          ).map(([x, y, rz, len]) => (
+            <group key={`${x},${y}`} position={[x, y, 0.004]} rotation={[0, 0, rz]}>
+              <mesh>
+                <boxGeometry args={[len, 0.034, 0.012]} />
+                <meshStandardMaterial color="#111215" metalness={0.6} roughness={0.4} />
+              </mesh>
+              <mesh position={[0, 0, -0.0065]}>
+                <boxGeometry args={[len * 0.8, 0.006, 0.002]} />
+                {chrome}
+              </mesh>
+            </group>
+          ))}
+          {/* Thumb buttons */}
+          {(
+            [
+              [0.062, 0.011, "#e0302a"],
+              [0.09, 0.011, "#f2c230"],
+              [-0.062, 0.011, "#2f8fe0"],
+              [-0.09, 0.011, "#3cc46a"],
+            ] as const
+          ).map(([x, y, color]) => (
+            <mesh key={x} position={[x, y, -0.004]} rotation={[Math.PI / 2, 0, 0]}>
+              <cylinderGeometry args={[0.007, 0.007, 0.006, 14]} />
+              <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.35} roughness={0.4} />
+            </mesh>
+          ))}
+          {/* Shift paddles behind the spokes */}
+          {[0.105, -0.105].map((x) => (
+            <mesh key={x} position={[x, 0.03, 0.022]}>
+              <boxGeometry args={[0.05, 0.075, 0.005]} />
               {chrome}
             </mesh>
           ))}
           {/* Centre pad */}
           <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, -0.006]}>
-            <cylinderGeometry args={[0.048, 0.054, 0.035, 28]} />
+            <cylinderGeometry args={[0.046, 0.054, 0.035, 28]} />
             {leather}
           </mesh>
-          <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, -0.028]}>
-            <cylinderGeometry args={[0.02, 0.02, 0.006, 24]} />
+          <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, -0.026]}>
+            <torusGeometry args={[0.02, 0.003, 8, 24]} />
             {chrome}
           </mesh>
           {/* Grip points at 10 and 2 o'clock, turned so a fist's grip axis follows the rim */}
@@ -341,8 +398,8 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
 
       {/* Lower cabin. Sizes come from the model: windscreen base and window sills at 0.79 m, body 1.36 m wide inside. */}
       {/* Dash, with an aluminium strip and two vents on its face */}
-      <mesh position={[0, 0.54, 0.6]}>
-        <boxGeometry args={[1.32, 0.49, 0.32]} />
+      <mesh position={[0, 0.54, 0.66]}>
+        <boxGeometry args={[1.44, 0.49, 0.44]} />
         <meshStandardMaterial color="#17191c" roughness={0.95} />
       </mesh>
       <mesh position={[0, 0.755, 0.438]}>
@@ -373,6 +430,12 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
       </mesh>
       <mesh position={[-0.31, 0.32, 0.05]}>
         <boxGeometry args={[0.36, 0.22, 0.4]} />
+        {leather}
+      </mesh>
+
+      {/* Shifter tower rising from the console, so the lever sits up near the wheel */}
+      <mesh position={[LEVER_PIVOT.x, (LEVER_PIVOT.y + 0.2) / 2, LEVER_PIVOT.z]}>
+        <boxGeometry args={[0.16, LEVER_PIVOT.y - 0.2, 0.2]} />
         {leather}
       </mesh>
 
