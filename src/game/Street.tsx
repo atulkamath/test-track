@@ -29,7 +29,7 @@ function ModelGroup({ name, spots }: { name: string; spots: ModelSpot[] }) {
         // Paper lanterns are lit from inside: make the red paper glow (the bloom pass picks it up).
         material = material.clone();
         material.emissive = material.color.clone();
-        material.emissiveIntensity = 1.7;
+        material.emissiveIntensity = 0.9;
       }
       parts.push({ geometry: o.geometry, material, local: toOrigin.clone().multiply(o.matrixWorld) });
     });
@@ -149,7 +149,7 @@ export function Pavements({ track }: { track: Track }) {
   );
 }
 
-const PETALS = 2400;
+const PETALS = 1400;
 
 function petalUniforms(u: { uTime: { value: number }; uCam: { value: THREE.Vector3 } }, time: number, cam: THREE.Vector3) {
   u.uTime.value = time;
@@ -184,8 +184,10 @@ export function Petals() {
         uniform vec3 uCam;
         attribute float aPhase;
         varying float vShade;
+        varying float vNear;
         void main() {
-          vec3 area = vec3(110.0, 26.0, 110.0);
+          // A shallow box around the camera: petals drift at tree height, not up in the sky.
+          vec3 area = vec3(70.0, 11.0, 70.0);
           vec3 p = position * area;
           // Wind carries them sideways while they fall and flutter.
           p.x += uTime * 2.2 + sin(uTime * 0.8 + aPhase * 40.0) * 1.6;
@@ -200,15 +202,19 @@ export function Petals() {
           gl_Position = projectionMatrix * mv;
           gl_PointSize = (0.11 + aPhase * 0.07) * 620.0 / max(-mv.z, 0.5);
           vShade = 0.75 + 0.25 * sin(uTime * 3.0 + aPhase * 60.0);
+          // Fade out with distance so far petals don't read as specks against the sky.
+          vNear = 1.0 - smoothstep(18.0, 34.0, -mv.z);
         }`,
       fragmentShader: /* glsl */ `
         varying float vShade;
+        varying float vNear;
         void main() {
           // A soft-edged oval: a petal seen from any angle.
           vec2 c = gl_PointCoord - 0.5;
           float d = c.x * c.x * 1.8 + c.y * c.y * 4.2;
-          if (d > 0.22) discard;
-          gl_FragColor = vec4(mix(vec3(1.0, 0.62, 0.78), vec3(1.0, 0.86, 0.92), vShade), 0.9);
+          if (d > 0.22 || vNear < 0.02) discard;
+          // Clearly pink, and dim enough that the bloom pass leaves them alone.
+          gl_FragColor = vec4(mix(vec3(0.86, 0.42, 0.58), vec3(0.92, 0.62, 0.74), vShade), 0.85 * vNear);
         }`,
     });
     return { geometry, material, uniforms };
