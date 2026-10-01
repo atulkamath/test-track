@@ -62,7 +62,7 @@ async function build(doc, name, bodyParts, wheels, frame, out, texSize) {
   for (const ch of scene.listChildren()) ch.dispose();
   for (const n of root.listNodes()) if (n !== car && !isUnder(n, car)) n.dispose();
   scene.addChild(car);
-  await doc.transform(prune(), dedup(), textureCompress({ encoder: sharp, targetFormat: "webp", resize: [texSize, texSize], quality: 82 }));
+  await doc.transform(prune(), dedup(), textureCompress({ encoder: sharp, targetFormat: "webp", resize: [texSize, texSize], quality: 92 }));
   await io.write(out, doc);
   const b = centre(car);
   console.log(`${name.padEnd(10)} -> ${out.split("/").pop().padEnd(16)} size ${b.size.map((v) => v.toFixed(2)).join(" x ")}  ground y ${b.min[1].toFixed(2)}  wheel r ${car.getExtras().wheelRadius.toFixed(2)}`);
@@ -92,7 +92,7 @@ function isUnder(n, top) {
     ],
     frame,
     `${outDir}/azura.glb`,
-    1024,
+    2048, // the player's car is seen up close: keep its textures sharp
   );
 }
 
@@ -131,6 +131,6 @@ function isUnder(n, top) {
       return { node: w.node, name: `wheel-${p[2] > 0 ? "front" : "back"}-${p[0] > 0 ? "left" : "right"}` };
     });
     const slug = bodyName.replace(/ body$/i, "").toLowerCase().replace(/\s+/g, "-");
-    await build(doc, slug, [body], named, frame, `${outDir}/cars/${slug}.glb`, 512);
+    await build(doc, slug, [body], named, frame, `${outDir}/cars/${slug}.glb`, 1024);
   }
 }

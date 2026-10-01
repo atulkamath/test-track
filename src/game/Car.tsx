@@ -26,6 +26,8 @@ export const Car = forwardRef<THREE.Group, { model: string; variant?: number }>(
       o.castShadow = true;
       o.receiveShadow = true;
       const mat = o.material as THREE.MeshStandardMaterial;
+      // Sharpest filtering for surfaces seen at shallow angles (bonnet, flanks, wheels).
+      for (const map of [mat.map, mat.normalMap, mat.roughnessMap, mat.metalnessMap]) if (map) map.anisotropy = 16;
       if (/glass_red/i.test(mat.name)) {
         const lens = mat.clone();
         lens.emissive = new THREE.Color("#ff1a0a");
