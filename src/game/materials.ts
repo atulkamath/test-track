@@ -89,7 +89,8 @@ export function grassMaterial() {
 }
 
 /**
- * Race-track asphalt. On top of the scanned texture: a dark rubbered-in racing line that wanders across the
+ * Race-track asphalt, weathered: the scan is sun-bleached paler and greyer, with exposed stones and hairline
+ * cracks. On top of that: a dark rubbered-in racing line that wanders across the
  * road, dusty lighter edges, a tar seam down the middle where two paving passes meet, darker resurfaced
  * patches, and slow tone variation so no two stretches look the same.
  * Expects road UVs: u = 0..1 across the width, v = distance along the track in road-widths.
@@ -121,6 +122,9 @@ export function roadMaterial() {
         vec4 fine = texture2D(map, vMapUv);
         vec4 broad = texture2D(map, vMapUv * 0.23 + 0.31);
         diffuseColor *= mix(fine, broad, 0.4);
+        // Weathering: years of sun bleach the tar to a paler, greyer, lower-contrast surface.
+        float grey = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(grey), 0.45) * 1.5 + 0.045;
         float u = vRoadUv.x;
         float along = vRoadUv.y;
         // Slow tone drift plus darker resurfaced patches.
@@ -131,10 +135,15 @@ export function roadMaterial() {
         float centre = 0.5 + 0.2 * sin(along * 0.42) + 0.06 * sin(along * 1.3 + 1.0);
         float line = exp(-pow((u - centre) / 0.15, 2.0));
         float streak = 0.75 + 0.25 * rnoise(vec2(u * 60.0, along * 0.6));
-        diffuseColor.rgb *= 1.0 - 0.3 * line * streak;
+        diffuseColor.rgb *= 1.0 - 0.24 * line * streak;
         // Dusty, sun-bleached edges where nobody drives.
         float edge = smoothstep(0.34, 0.5, abs(u - 0.5));
         diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 1.22 + 0.015, edge * 0.6);
+        // Old tarmac: pale exposed stones and hairline cracks.
+        float speck = rnoise(vWPos.xz * 9.0);
+        diffuseColor.rgb += 0.035 * smoothstep(0.72, 0.95, speck);
+        float crack = 1.0 - smoothstep(0.0, 0.035, abs(rnoise(vWPos.xz * 0.55) - 0.5));
+        diffuseColor.rgb *= 1.0 - 0.16 * crack * rnoise(vWPos.xz * 0.11);
         // Tar seam down the centre joint.
         float seam = 1.0 - smoothstep(0.0, 0.004, abs(u - 0.5 + 0.003 * sin(along * 9.0)));
         diffuseColor.rgb *= 1.0 - 0.35 * seam;`,
