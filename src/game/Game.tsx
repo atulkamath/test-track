@@ -85,7 +85,30 @@ function hearOtherCars(engine: Engine, gearboxes: Gearbox[], lastGaps: number[],
   });
 }
 
-/** Hide the player's driver figure and thin the window tint while looking out from inside. */
+/**
+ * The model's interior is a shell made to be seen through the windows: roof lining and pillars, plus a flat black
+ * lid at dash height that would bury the steering wheel and shifter. This returns the shell without the lid
+ * (every triangle wholly below `cut` metres, car-local); Cockpit.tsx supplies the real lower cabin.
+ */
+function openInterior(mesh: THREE.Mesh, car: THREE.Object3D, cut: number) {
+  car.updateMatrixWorld(true);
+  const toCar = car.matrixWorld.clone().invert().multiply(mesh.matrixWorld);
+  const pos = mesh.geometry.getAttribute("position");
+  const index = mesh.geometry.getIndex();
+  const count = index ? index.count : pos.count;
+  const v = new THREE.Vector3();
+  const height = (i: number) => v.fromBufferAttribute(pos, index ? index.getX(i) : i).applyMatrix4(toCar).y;
+  const kept: number[] = [];
+  for (let i = 0; i < count; i += 3) {
+    if (Math.max(height(i), height(i + 1), height(i + 2)) < cut) continue;
+    for (let k = i; k < i + 3; k++) kept.push(index ? index.getX(k) : k);
+  }
+  const open = mesh.geometry.clone();
+  open.setIndex(kept);
+  return open;
+}
+
+/** Hide the player's driver figure, open up the interior shell and thin the window tint while looking out from inside. */
 function setCockpitLook(car: THREE.Object3D, inside: boolean) {
   if (car.userData.inside === inside) return;
   const driver = car.getObjectByName("driver");
@@ -93,6 +116,11 @@ function setCockpitLook(car: THREE.Object3D, inside: boolean) {
   car.userData.inside = inside;
   driver.visible = !inside;
   car.traverse((o) => {
+    if (o instanceof THREE.Mesh && o.name.startsWith("Interior")) {
+      o.userData.closed ??= o.geometry;
+      o.userData.open ??= openInterior(o, car, 0.86);
+      o.geometry = (inside ? o.userData.open : o.userData.closed) as THREE.BufferGeometry;
+    }
     const mat = o instanceof THREE.Mesh ? (o.material as THREE.MeshStandardMaterial) : null;
     if (!mat) return;
     if (/Glass$/.test(mat.name)) {

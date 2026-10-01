@@ -1,9 +1,10 @@
 "use client";
 
-// Everything you look at from the driver's seat. The Azura model's own interior is only a black shell (no
-// dials, no shifter), so the parts that matter are built here and laid over it: an instrument cluster with
-// analog dials seen through the wheel, a steering wheel that follows your input, gloved hands and arms, and an
-// H-pattern shifter the right hand reaches for on every gear change.
+// Everything you look at from the driver's seat. The Azura model's own interior is only a shell (roof lining
+// and pillars; Game.tsx removes its flat lid at dash height), so the cabin below the windows is built here: dash,
+// door panels, centre console, an instrument cluster with analog dials seen through the wheel, a steering wheel
+// that follows your input, gloved hands and arms, and an H-pattern shifter the right hand reaches for on every
+// gear change.
 // Positions are in the car's local frame (metres): +z forward, +x left, y up. Left-hand drive. The model's own
 // fixed steering wheel is removed by scripts/convert-cars.mjs. Layout was tuned against a screenshot: the eye is
 // well forward of the headrest so the low roof stays out of shot, and the wheel is small and low enough that
@@ -18,9 +19,9 @@ const WHEEL_TILT = 0.5;
 const RIM = 0.14;
 /** Hands hold the rim at 10 and 2 o'clock: this far round from 9 and 3 (radians). */
 const GRIP_ANGLE = 0.61;
-/** Shifter just right of the wheel, high enough to be in shot even in a narrow window. */
+/** Shifter on the centre console, far enough forward to be in shot. */
 const LEVER_LEN = 0.16;
-const LEVER_PIVOT = new THREE.Vector3(0.08, 0.6, 0.4);
+const LEVER_PIVOT = new THREE.Vector3(0.02, 0.6, 0.38);
 const SHOULDER_L = new THREE.Vector3(0.5, 0.8, -0.12);
 const SHOULDER_R = new THREE.Vector3(0.13, 0.8, -0.12);
 /** How long the hand spends reaching for the lever and back (seconds). */
@@ -338,11 +339,44 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
       <Limb limbRef={upperR} radius={0.045} />
       <Limb limbRef={lowerR} radius={0.036} />
 
-      {/* Gear shifter: small console, chrome gate ring, leather boot, chrome shaft, knob with the shift pattern */}
-      <mesh position={[LEVER_PIVOT.x, LEVER_PIVOT.y - 0.08, LEVER_PIVOT.z]}>
-        <boxGeometry args={[0.12, 0.16, 0.16]} />
-        {trim}
+      {/* Lower cabin. Sizes come from the model: windscreen base and window sills at 0.79 m, body 1.36 m wide inside. */}
+      {/* Dash, with an aluminium strip and two vents on its face */}
+      <mesh position={[0, 0.54, 0.6]}>
+        <boxGeometry args={[1.32, 0.49, 0.32]} />
+        <meshStandardMaterial color="#17191c" roughness={0.95} />
       </mesh>
+      <mesh position={[0, 0.755, 0.438]}>
+        <boxGeometry args={[1.3, 0.012, 0.006]} />
+        {chrome}
+      </mesh>
+      {[0.1, -0.08].map((x) => (
+        <mesh key={x} position={[x, 0.7, 0.438]}>
+          <torusGeometry args={[0.03, 0.006, 8, 24]} />
+          {chrome}
+        </mesh>
+      ))}
+      {/* Door panels */}
+      {[0.67, -0.67].map((x) => (
+        <mesh key={x} position={[x, 0.5, 0.1]}>
+          <boxGeometry args={[0.06, 0.6, 1.4]} />
+          {trim}
+        </mesh>
+      ))}
+      {/* Floor, centre console, passenger seat cushion */}
+      <mesh position={[0, 0.2, 0.1]}>
+        <boxGeometry args={[1.34, 0.02, 1.4]} />
+        <meshStandardMaterial color="#0c0d0f" roughness={1} />
+      </mesh>
+      <mesh position={[0, 0.4, -0.08]}>
+        <boxGeometry args={[0.2, 0.4, 1.04]} />
+        {leather}
+      </mesh>
+      <mesh position={[-0.31, 0.32, 0.05]}>
+        <boxGeometry args={[0.36, 0.22, 0.4]} />
+        {leather}
+      </mesh>
+
+      {/* Gear shifter: chrome gate ring, leather boot, chrome shaft, knob with the shift pattern */}
       <mesh position={[LEVER_PIVOT.x, LEVER_PIVOT.y + 0.003, LEVER_PIVOT.z]} rotation={[Math.PI / 2, 0, 0]}>
         <torusGeometry args={[0.046, 0.005, 8, 28]} />
         {chrome}
