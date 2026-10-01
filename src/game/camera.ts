@@ -3,7 +3,7 @@ import * as THREE from "three";
 import type { Pose } from "./engine";
 
 // The first view is the default.
-export const VIEWS = ["Far chase", "Chase", "Cockpit", "Roof", "Bumper", "TV"] as const;
+export const VIEWS = ["Chase", "Far chase", "Cockpit", "Roof", "Bumper", "TV"] as const;
 export type View = (typeof VIEWS)[number];
 
 interface Follow {
@@ -17,7 +17,8 @@ interface Follow {
 }
 
 const FOLLOW: Record<Exclude<View, "TV" | "Cockpit">, Follow> = {
-  Chase: { back: 6.4, up: 2.2, ahead: 6, lookY: 1.1, stiffness: 9, fov: 62 },
+  // Gran Turismo-style chase: low and close behind the bumper, locked firmly to the car, looking well up the road.
+  Chase: { back: 5.4, up: 1.7, ahead: 10, lookY: 1.05, stiffness: 16, fov: 56 },
   "Far chase": { back: 11, up: 4.6, ahead: 6, lookY: 1, stiffness: 6, fov: 58 },
   Roof: { back: -0.3, up: 2.05, ahead: 20, lookY: 1.4, stiffness: 60, fov: 70 },
   Bumper: { back: -2.05, up: 0.7, ahead: 20, lookY: 0.9, stiffness: 80, fov: 74 },
@@ -88,7 +89,7 @@ export class CameraRig {
       const shake = (offRoad && Math.abs(speed) > 3 ? 0.08 : 0) + speedFrac * speedFrac * 0.012;
       camera.position.y += (Math.random() - 0.5) * shake;
       camera.lookAt(this.look);
-      fov = f.fov + speedFrac * (view === "Chase" || view === "Far chase" ? 14 : 8);
+      fov = f.fov + speedFrac * (view === "Far chase" ? 14 : 8);
     }
 
     if (changed) camera.fov = fov;

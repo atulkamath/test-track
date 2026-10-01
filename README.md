@@ -10,7 +10,7 @@ pnpm replay run.json     # headless replay; prints lap ticks, exits 1 on mismatc
 pnpm tsx scripts/make-fixture.ts [seed] [out]   # autopilot lap -> run.json
 ```
 
-Controls: arrows / WASD, R restart, C cycle camera (far chase, chase, cockpit, roof, bumper, TV), M mute. Touch buttons on phones.
+Controls: arrows / WASD, R restart, C cycle camera (chase, far chase, cockpit, roof, bumper, TV), M mute. Touch buttons on phones.
 
 ## Layout
 - `src/sim/` — pure, deterministic sim (no React/Three/DOM). Reuse this on the server.
