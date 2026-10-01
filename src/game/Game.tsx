@@ -6,7 +6,7 @@ import { Bloom, EffectComposer, HueSaturation, N8AO, SMAA, ToneMapping, Vignette
 import { ToneMappingMode } from "postprocessing";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
-import { COS, DOWN, LEFT, RIGHT, SIN, UP, generateTrack, type Track } from "@/sim";
+import { COS, DOWN, LEFT, MAX_SPEED, RIGHT, SIN, UP, generateTrack, type Track } from "@/sim";
 import { Sound, type OtherCar } from "./audio";
 import { CameraRig, VIEWS } from "./camera";
 import { animateCar, Car, newCarAnim, PLAYER_MODEL } from "./Car";
@@ -22,6 +22,7 @@ import { Pylons, Ridges, Town } from "./Background";
 import { CarPark, CircuitBoxes, FerrisWheel, Flags, GravelTraps, Tents, TimingTower } from "./Circuit";
 import { buildLayout, type Layout } from "./layout";
 import { makeHeight } from "./terrain";
+import { SpeedBlurEffect } from "./SpeedBlur";
 import { Billboards } from "./Trackside";
 import styles from "./game.module.css";
 
@@ -89,6 +90,15 @@ function setCockpitLook(car: THREE.Object3D, inside: boolean) {
   });
 }
 
+function setRef<T>(ref: React.RefObject<T>, value: T) {
+  ref.current = value;
+}
+
+/** Blur starts around 80 km/h and builds to full strength at top speed. */
+function setBlur(blur: SpeedBlurEffect, speedFrac: number) {
+  blur.setStrength(Math.max(0, speedFrac - 0.3) * 0.17);
+}
+
 function resetGears(g: Gearbox) {
   g.reset();
 }
@@ -108,6 +118,7 @@ function Driver({
   view,
   sound,
   gears,
+  speedFx,
 }: {
   engine: Engine;
   input: React.RefObject<number>;
@@ -118,6 +129,7 @@ function Driver({
   view: React.RefObject<number>;
   sound: React.RefObject<Sound | null>;
   gears: Gearbox;
+  speedFx: React.RefObject<number>;
 }) {
   const car = useRef<THREE.Group>(null);
   const sun = useRef<THREE.DirectionalLight>(null);
@@ -158,6 +170,8 @@ function Driver({
     // From the driver's seat you see the car's real interior, so the car stays visible; only the driver's own
     // body is hidden (the camera is inside his head) and the glass is made clearer. Bumper cam hides the car.
     const inCockpit = viewName === "Cockpit";
+    // Speed blur for the driving views; not in the cockpit (it would smear the cabin) or the zoomed TV shots.
+    setRef(speedFx, inCockpit || viewName === "TV" ? 0 : Math.min(Math.abs(speed) / MAX_SPEED, 1));
     if (exterior.current) {
       exterior.current.visible = viewName !== "Bumper";
       setCockpitLook(exterior.current, inCockpit);
@@ -263,7 +277,9 @@ function World({ track, layout }: { track: Track; layout: Layout }) {
 }
 
 /** Modern grade: ambient occlusion for contact shading, gentle bloom, clean anti-aliasing. */
-function Effects({ ao }: { ao: boolean }) {
+function Effects({ ao, speedFx }: { ao: boolean; speedFx: React.RefObject<number> }) {
+  const blur = useMemo(() => new SpeedBlurEffect(), []);
+  useFrame(() => setBlur(blur, speedFx.current));
   return (
     <EffectComposer multisampling={0}>
       {/* AO off in the cockpit: surfaces centimetres from the lens would darken the whole view. */}
@@ -272,6 +288,7 @@ function Effects({ ao }: { ao: boolean }) {
       <HueSaturation saturation={0.06} />
       <Vignette offset={0.35} darkness={0.35} />
       {/* The composer switches the renderer's own tone mapping off, so do it here: HDR light -> filmic screen colours. */}
+      <primitive object={blur} />
       <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
       <SMAA />
     </EffectComposer>
@@ -283,6 +300,7 @@ export default function Game() {
   const layout = useMemo(() => buildLayout(track), [track]);
   const skids = useRef<SkidHandle>(null);
   const gears = useMemo(() => new Gearbox(), []);
+  const speedFx = useRef(0);
   const view = useRef(0);
   const [viewIdx, setViewIdx] = useState(0);
   const [viewName, setViewName] = useState<string | null>(null);
@@ -393,14 +411,14 @@ export default function Game() {
         camera={{ fov: 58, near: 0.1, far: 3200 }}
       >
         <World track={track} layout={layout} />
-        <Driver engine={engine} input={input} started={startedRef} onTick={onTick} skids={skids} layout={layout} view={view} sound={sound} gears={gears} />
+        <Driver engine={engine} input={input} started={startedRef} onTick={onTick} skids={skids} layout={layout} view={view} sound={sound} gears={gears} speedFx={speedFx} />
         <Traffic engine={engine} skids={skids} />
         <Obstacles engine={engine} />
         <SkidMarks ref={skids} />
         <Crowd people={layout.people} engine={engine} />
         <Helicopter engine={engine} />
         <BigScreen layout={layout} engine={engine} />
-        <Effects ao={VIEWS[viewIdx] !== "Cockpit"} />
+        <Effects ao={VIEWS[viewIdx] !== "Cockpit"} speedFx={speedFx} />
       </Canvas>
 
       <div className={styles.hud}>

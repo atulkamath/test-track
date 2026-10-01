@@ -3,15 +3,16 @@ import * as THREE from "three";
 import type { Pose } from "./engine";
 
 // The first view is the default.
-// "Classic chase" is the original camera, kept alongside the rebuilt "Chase" so the two can be compared with C.
-export const VIEWS = ["Classic chase", "Chase", "Far chase", "Cockpit", "Roof", "Bumper", "TV"] as const;
+export const VIEWS = ["Chase", "Far chase", "Cockpit", "Roof", "Bumper", "TV"] as const;
 export type View = (typeof VIEWS)[number];
 
 interface Follow {
   /** Distance behind the car at rest, and how much further back it eases at top speed. */
   back: number;
   backSpeed: number;
+  /** Height at rest, and how much it changes at top speed (negative = drops toward the road). */
   up: number;
+  upSpeed: number;
   /** The camera aims at a point this far ahead of the car, at this height. */
   ahead: number;
   lookY: number;
@@ -26,11 +27,11 @@ interface Follow {
 // the same size and place on screen at any speed. Only the orbit angle lags, so in a turn the car swings in the
 // frame and the view catches up. Speed is sold by the lens widening and the camera easing back slightly, plus a
 // small spring: it drops back under hard acceleration and closes in under braking.
-const FOLLOW: Record<Exclude<View, "TV" | "Cockpit" | "Classic chase">, Follow> = {
-  Chase: { back: 5.2, backSpeed: 1.1, up: 1.65, ahead: 6, lookY: 1.05, yawRate: 5.5, fov: 58, fovSpeed: 14 },
-  "Far chase": { back: 9.5, backSpeed: 2, up: 3.6, ahead: 6, lookY: 1, yawRate: 4, fov: 56, fovSpeed: 12 },
-  Roof: { back: -0.3, backSpeed: 0, up: 2.05, ahead: 20, lookY: 1.4, yawRate: 60, fov: 70, fovSpeed: 8 },
-  Bumper: { back: -2.05, backSpeed: 0, up: 0.7, ahead: 20, lookY: 0.9, yawRate: 80, fov: 74, fovSpeed: 8 },
+const FOLLOW: Record<Exclude<View, "TV" | "Cockpit">, Follow> = {
+  Chase: { back: 5.2, backSpeed: 1.6, up: 1.65, upSpeed: -0.22, ahead: 6, lookY: 1.05, yawRate: 5.5, fov: 58, fovSpeed: 24 },
+  "Far chase": { back: 9.5, backSpeed: 2.4, up: 3.6, upSpeed: -0.4, ahead: 6, lookY: 1, yawRate: 4, fov: 56, fovSpeed: 20 },
+  Roof: { back: -0.3, backSpeed: 0, up: 2.05, upSpeed: 0, ahead: 20, lookY: 1.4, yawRate: 60, fov: 70, fovSpeed: 14 },
+  Bumper: { back: -2.05, backSpeed: 0, up: 0.7, upSpeed: 0, ahead: 20, lookY: 0.9, yawRate: 80, fov: 74, fovSpeed: 14 },
 };
 
 export class CameraRig {
@@ -66,21 +67,6 @@ export class CameraRig {
       // ~5° down, and ~6° toward the middle of the windscreen so the left pillar doesn't crowd the view.
       camera.lookAt(carRoot.localToWorld(this.target.set(eye.x - 1.3, eye.y - 1.0, eye.z + 12)));
       fov = 60 + speedFrac * 5;
-    } else if (view === "Classic chase") {
-      // The original camera: its position chases a point 6.4 m behind the car, so it trails further at speed.
-      this.desired.set(p.x - fx * 6.4, 2.2, p.z - fz * 6.4);
-      this.target.set(p.x + fx * 6, 1.1, p.z + fz * 6);
-      if (!this.snapped || changed) {
-        camera.position.copy(this.desired);
-        this.look.copy(this.target);
-        this.snapped = true;
-      }
-      camera.position.lerp(this.desired, 1 - Math.exp(-delta * 9));
-      this.look.lerp(this.target, 1 - Math.exp(-delta * 13.5));
-      const classicSpeed = Math.min(Math.abs(speed) / 55, 1);
-      camera.position.y += (Math.random() - 0.5) * ((offRoad && Math.abs(speed) > 3 ? 0.08 : 0) + classicSpeed * classicSpeed * 0.012);
-      camera.lookAt(this.look);
-      fov = 62 + classicSpeed * 14;
     } else if (view === "TV" && this.tvSpots.length > 0) {
       // Pick the nearest trackside camera, switching only when another is clearly closer (like a TV director).
       let best = 0;
@@ -119,10 +105,12 @@ export class CameraRig {
       const pullTarget = f.backSpeed > 0 ? THREE.MathUtils.clamp(accel * 0.045, -0.55, 0.6) : 0;
       this.pull += (pullTarget - this.pull) * (1 - Math.exp(-delta * 3));
 
-      const dist = f.back + speedFrac * f.backSpeed + this.pull;
+      // Speed effects build early: most of a lap is spent at 100-150 km/h, well short of top speed.
+      const rush = Math.pow(speedFrac, 0.7);
+      const dist = f.back + rush * f.backSpeed + this.pull;
       // Rumble on the grass, and a faint high-speed buzz.
-      const shake = (offRoad && Math.abs(speed) > 3 ? 0.08 : 0) + speedFrac * speedFrac * 0.012;
-      camera.position.set(p.x - Math.sin(this.yaw) * dist, f.up + (Math.random() - 0.5) * shake, p.z - Math.cos(this.yaw) * dist);
+      const shake = (offRoad && Math.abs(speed) > 3 ? 0.08 : 0) + speedFrac * speedFrac * 0.03;
+      camera.position.set(p.x - Math.sin(this.yaw) * dist, f.up + rush * f.upSpeed + (Math.random() - 0.5) * shake, p.z - Math.cos(this.yaw) * dist);
       this.target.set(p.x + fx * f.ahead, f.lookY, p.z + fz * f.ahead);
       if (!this.snapped || changed) {
         this.look.copy(this.target);
@@ -130,7 +118,7 @@ export class CameraRig {
       }
       this.look.lerp(this.target, 1 - Math.exp(-delta * 12));
       camera.lookAt(this.look);
-      fov = f.fov + speedFrac * f.fovSpeed;
+      fov = f.fov + rush * f.fovSpeed;
     }
 
     if (changed) camera.fov = fov;
