@@ -16,7 +16,7 @@ Maps (pick on the start screen, or `?map=sakura` / `?map=circuit`):
 - **Grand Circuit**: an open race circuit with gravel run-off and big grandstands, a new layout each day
   (`?seed=...` picks one). `src/game/layout.ts` dresses it.
 
-Controls: arrows / WASD, R restart, C cycle camera (chase, far chase, cockpit, roof, bumper, TV), M mute. Touch buttons on phones.
+Controls: arrows / WASD, R restart, C cycle camera (chase, far chase, cockpit, roof, bumper, TV), M mute, G toggle the modern graphics effects. Touch buttons on phones.
 
 ## Layout
 - `src/sim/` — pure, deterministic sim (no React/Three/DOM). Reuse this on the server.

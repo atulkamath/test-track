@@ -131,6 +131,61 @@ export interface SkidHandle {
 }
 
 const SKID_CAPACITY = 2400;
+const SMOKE_CAPACITY = 360;
+/** Seconds a puff of tyre smoke lasts. */
+const SMOKE_LIFE = 1.5;
+
+/** Tyre smoke: soft puffs that rise, swell and fade. Each particle is a point with a birth time; the shader does the rest. */
+function makeSmoke() {
+  const position = new Float32Array(SMOKE_CAPACITY * 3);
+  const birth = new Float32Array(SMOKE_CAPACITY).fill(-1000);
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(position, 3));
+  geometry.setAttribute("aBirth", new THREE.BufferAttribute(birth, 1));
+  const uniforms = { uTime: { value: 0 } };
+  const material = new THREE.ShaderMaterial({
+    uniforms,
+    transparent: true,
+    depthWrite: false,
+    vertexShader: /* glsl */ `
+      uniform float uTime;
+      attribute float aBirth;
+      varying float vFade;
+      void main() {
+        float age = uTime - aBirth;
+        float life = ${SMOKE_LIFE.toFixed(2)};
+        vFade = age < 0.0 || age > life ? 0.0 : 1.0 - age / life;
+        vec3 p = position + vec3(0.0, age * 1.1, 0.0);
+        vec4 mv = viewMatrix * vec4(p, 1.0);
+        gl_Position = projectionMatrix * mv;
+        gl_PointSize = vFade > 0.0 ? (0.5 + age * 2.4) * 520.0 / max(-mv.z, 0.5) : 0.0;
+      }`,
+    fragmentShader: /* glsl */ `
+      varying float vFade;
+      void main() {
+        float d = length(gl_PointCoord - 0.5) * 2.0;
+        float soft = 1.0 - smoothstep(0.2, 1.0, d);
+        if (soft * vFade < 0.01) discard;
+        gl_FragColor = vec4(vec3(0.86), soft * vFade * 0.32);
+      }`,
+  });
+  let next = 0;
+  return {
+    geometry,
+    material,
+    setTime(time: number) {
+      uniforms.uTime.value = time;
+    },
+    /** Start a puff at (x, z) on the ground. */
+    emit(x: number, z: number) {
+      position.set([x + (Math.random() - 0.5) * 0.3, 0.15, z + (Math.random() - 0.5) * 0.3], next * 3);
+      birth[next] = uniforms.uTime.value;
+      next = (next + 1) % SMOKE_CAPACITY;
+      geometry.getAttribute("position").needsUpdate = true;
+      geometry.getAttribute("aBirth").needsUpdate = true;
+    },
+  };
+}
 
 export const SkidMarks = forwardRef<SkidHandle>(function SkidMarks(_, ref) {
   const mesh = useRef<THREE.InstancedMesh>(null);
@@ -138,6 +193,9 @@ export const SkidMarks = forwardRef<SkidHandle>(function SkidMarks(_, ref) {
   const last = useRef(new Map<string, [number, number][] | null>());
   const geometry = useMemo(() => new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), []);
   const tmp = useMemo(() => ({ m: new THREE.Matrix4(), q: new THREE.Quaternion(), p: new THREE.Vector3(), s: new THREE.Vector3(), up: new THREE.Vector3(0, 1, 0) }), []);
+  const smoke = useMemo(() => makeSmoke(), []);
+  const puffClock = useRef(0);
+  useFrame(({ clock }) => smoke.setTime(clock.elapsedTime));
 
   useLayoutEffect(() => {
     const m = mesh.current;
@@ -162,6 +220,8 @@ export const SkidMarks = forwardRef<SkidHandle>(function SkidMarks(_, ref) {
       const fz = Math.cos(angle);
       // Rear wheels: 1 m behind centre, 0.45 m either side.
       const wheels: [number, number][] = [-1, 1].map((s) => [x - fx * 1 + fz * 0.45 * s, z - fz * 1 - fx * 0.45 * s]);
+      // A puff from each rear tyre every few frames while it's sliding.
+      if (puffClock.current++ % 3 === 0) for (const [wx, wz] of wheels) smoke.emit(wx, wz);
       const prev = last.current.get(key);
       if (prev) {
         wheels.forEach(([wx, wz], w) => {
@@ -192,8 +252,11 @@ export const SkidMarks = forwardRef<SkidHandle>(function SkidMarks(_, ref) {
   }));
 
   return (
-    <instancedMesh ref={mesh} args={[geometry, undefined, SKID_CAPACITY]} frustumCulled={false} receiveShadow>
-      <meshStandardMaterial color="#141414" transparent opacity={0.45} depthWrite={false} polygonOffset polygonOffsetFactor={-2} roughness={1} />
-    </instancedMesh>
+    <>
+      <instancedMesh ref={mesh} args={[geometry, undefined, SKID_CAPACITY]} frustumCulled={false} receiveShadow>
+        <meshStandardMaterial color="#141414" transparent opacity={0.45} depthWrite={false} polygonOffset polygonOffsetFactor={-2} roughness={1} />
+      </instancedMesh>
+      <points geometry={smoke.geometry} material={smoke.material} frustumCulled={false} />
+    </>
   );
 });

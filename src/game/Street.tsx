@@ -23,10 +23,18 @@ function ModelGroup({ name, spots }: { name: string; spots: ModelSpot[] }) {
     const toOrigin = new THREE.Matrix4().makeTranslation(-(box.min.x + box.max.x) / 2, -box.min.y, -(box.min.z + box.max.z) / 2);
     const parts: { geometry: THREE.BufferGeometry; material: THREE.Material; local: THREE.Matrix4 }[] = [];
     scene.traverse((o) => {
-      if (o instanceof THREE.Mesh) parts.push({ geometry: o.geometry, material: o.material as THREE.Material, local: toOrigin.clone().multiply(o.matrixWorld) });
+      if (!(o instanceof THREE.Mesh)) return;
+      let material = o.material as THREE.MeshStandardMaterial;
+      if (name === "redlantern" && material.color && material.color.r > material.color.g * 1.5) {
+        // Paper lanterns are lit from inside: make the red paper glow (the bloom pass picks it up).
+        material = material.clone();
+        material.emissive = material.color.clone();
+        material.emissiveIntensity = 1.7;
+      }
+      parts.push({ geometry: o.geometry, material, local: toOrigin.clone().multiply(o.matrixWorld) });
     });
     return { parts, height: box.max.y - box.min.y || 1 };
-  }, [scene]);
+  }, [scene, name]);
 
   const refs = useRef<(THREE.InstancedMesh | null)[]>([]);
   useLayoutEffect(() => {

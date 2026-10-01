@@ -2,7 +2,7 @@
 
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Environment } from "@react-three/drei";
-import { Bloom, EffectComposer, HueSaturation, N8AO, SMAA, ToneMapping, Vignette } from "@react-three/postprocessing";
+import { Bloom, BrightnessContrast, EffectComposer, GodRays, HueSaturation, N8AO, SMAA, ToneMapping, Vignette } from "@react-three/postprocessing";
 import { ToneMappingMode } from "postprocessing";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -301,19 +301,41 @@ function World({ track, layout }: { track: Track; layout: Layout }) {
   );
 }
 
-/** Modern grade: ambient occlusion for contact shading, gentle bloom, clean anti-aliasing. */
-function Effects({ ao }: { ao: boolean }) {
+/** The sun as a bright disc far along the sun direction, kept at a fixed distance from the camera. */
+function placeSun(sun: THREE.Mesh, camera: THREE.Camera) {
+  sun.position.copy(camera.position).addScaledVector(SUN_DIR, 2400);
+}
+
+/**
+ * Post-processing. Always: ambient occlusion, bloom, vignette, tone mapping, anti-aliasing.
+ * `modern` adds the newer look: shafts of sunlight where the sun is partly hidden (through blossom, at the tunnel
+ * mouth), stronger glow from lit things, punchier colour, and AgX tone mapping, which keeps bright colours from
+ * washing out. Press G in the game to compare.
+ */
+function Effects({ ao, modern }: { ao: boolean; modern: boolean }) {
+  const [sun, setSun] = useState<THREE.Mesh | null>(null);
+  useFrame(({ camera }) => {
+    if (sun) placeSun(sun, camera);
+  });
   return (
-    <EffectComposer multisampling={0}>
-      {/* AO off in the cockpit: surfaces centimetres from the lens would darken the whole view. */}
-      <N8AO enabled={ao} aoRadius={2.5} distanceFalloff={1} intensity={2.2} quality="medium" halfRes />
-      <Bloom mipmapBlur luminanceThreshold={0.9} luminanceSmoothing={0.15} intensity={0.3} />
-      <HueSaturation saturation={0.06} />
-      <Vignette offset={0.35} darkness={0.35} />
-      {/* The composer switches the renderer's own tone mapping off, so do it here: HDR light -> filmic screen colours. */}
-      <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
-      <SMAA />
-    </EffectComposer>
+    <>
+      <mesh ref={setSun} visible={modern}>
+        <sphereGeometry args={[70, 24, 16]} />
+        <meshBasicMaterial color="#fff3d2" fog={false} toneMapped={false} />
+      </mesh>
+      <EffectComposer multisampling={0}>
+        {/* AO off in the cockpit: surfaces centimetres from the lens would darken the whole view. */}
+        <N8AO enabled={ao} aoRadius={2.5} distanceFalloff={1} intensity={2.2} quality="medium" halfRes />
+        {modern && sun ? <GodRays sun={sun} samples={50} density={0.95} decay={0.93} weight={0.45} exposure={0.3} clampMax={1} blur /> : <></>}
+        <Bloom mipmapBlur luminanceThreshold={modern ? 0.8 : 0.9} luminanceSmoothing={0.15} intensity={modern ? 0.55 : 0.3} />
+        <HueSaturation saturation={modern ? 0.2 : 0.06} />
+        <BrightnessContrast contrast={modern ? 0.12 : 0} />
+        <Vignette offset={0.35} darkness={0.35} />
+        {/* The composer switches the renderer's own tone mapping off, so do it here: HDR light -> screen colours. */}
+        <ToneMapping mode={modern ? ToneMappingMode.AGX : ToneMappingMode.ACES_FILMIC} />
+        <SMAA />
+      </EffectComposer>
+    </>
   );
 }
 
@@ -327,6 +349,7 @@ export default function Game() {
   const [viewIdx, setViewIdx] = useState(0);
   const [viewName, setViewName] = useState<string | null>(null);
   const [muted, setMuted] = useState(false);
+  const [modern, setModern] = useState(true);
   const sound = useRef<Sound | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [engine, setEngine] = useState(() => new Engine(track));
@@ -361,6 +384,15 @@ export default function Game() {
     toastTimer.current = setTimeout(() => setViewName(null), 1400);
   }, []);
 
+  const toggleModern = useCallback(() => {
+    setModern((m) => {
+      setViewName(m ? "Graphics: classic" : "Graphics: modern");
+      return !m;
+    });
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setViewName(null), 1400);
+  }, []);
+
   const toggleMute = useCallback(() => {
     setMuted((m) => {
       sound.current?.setMuted(!m);
@@ -383,6 +415,7 @@ export default function Game() {
       if (e.code === "KeyR") return restart();
       if (e.code === "KeyC" && !e.repeat) return cycleView();
       if (e.code === "KeyM" && !e.repeat) return toggleMute();
+      if (e.code === "KeyG" && !e.repeat) return toggleModern();
       const bit = KEY_BITS[e.code];
       if (bit) {
         e.preventDefault();
@@ -402,7 +435,7 @@ export default function Game() {
       window.removeEventListener("keyup", up);
       window.removeEventListener("blur", blur);
     };
-  }, [press, restart, cycleView, toggleMute]);
+  }, [press, restart, cycleView, toggleMute, toggleModern]);
 
   useEffect(() => () => sound.current?.dispose(), []);
 
@@ -455,7 +488,7 @@ export default function Game() {
         <Crowd people={layout.people} engine={engine} />
         <Helicopter engine={engine} />
         <BigScreen layout={layout} engine={engine} />
-        <Effects ao={VIEWS[viewIdx] !== "Cockpit"} />
+        <Effects ao={VIEWS[viewIdx] !== "Cockpit"} modern={modern} />
       </Canvas>
 
       <div className={styles.hud}>
@@ -505,7 +538,7 @@ export default function Game() {
               </a>
             ))}
           </div>
-          <div className={styles.hint}>Press ↑ / W to start · C camera · M sound</div>
+          <div className={styles.hint}>Press ↑ / W to start · C camera · M sound · G graphics</div>
         </>
       )}
       {viewName && <div className={styles.toast}>{viewName}</div>}
