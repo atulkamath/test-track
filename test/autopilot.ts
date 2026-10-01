@@ -1,11 +1,17 @@
 // Test helper: drive a full lap with the autopilot and return it as a run.
-import { autopilotInput as drive, createSim, step, RUN_VERSION, type Run, type Sim } from "../src/sim";
+import { autopilotInput as drive, chooseLine, createSim, step, RUN_VERSION, type Run, type Sim } from "../src/sim";
+
+// The test driver races like the AI does: it keeps its own line from tick to tick, per sim.
+const lines = new WeakMap<Sim, number>();
 
 export function autopilotInput(sim: Sim): number {
-  return drive(sim.track, sim.state.car);
+  const { car, bots } = sim.state;
+  const line = chooseLine(sim.track, car, bots, lines.get(sim) ?? 0);
+  lines.set(sim, line);
+  return drive(sim.track, car, undefined, line, bots);
 }
 
-export function autopilotRun(seed: string, maxTicks = 60 * 180): Run & { lapTicks: number } {
+export function autopilotRun(seed: string, maxTicks = 60 * 300): Run & { lapTicks: number } {
   const sim = createSim(seed);
   const inputs: number[] = [];
   while (sim.state.lapTicks === null && inputs.length < maxTicks) {

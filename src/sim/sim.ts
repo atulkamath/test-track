@@ -1,4 +1,4 @@
-import { autopilotInput, nearestIndex, type Skill } from "./autopilot";
+import { autopilotInput, chooseLine, nearestIndex, type Skill } from "./autopilot";
 import { stepCar, type CarState } from "./car";
 import { collideCars, collideObstacles, collideWalls, type Knock } from "./collide";
 import { INPUT_MASK } from "./input";
@@ -10,7 +10,7 @@ export const TICK_RATE = 60;
 /** Replays longer than this are rejected (10 minutes). */
 export const MAX_TICKS = TICK_RATE * 60 * 10;
 /** Bump whenever sim rules change: old runs can't be replayed faithfully. */
-export const RUN_VERSION = 6 as const;
+export const RUN_VERSION = 7 as const;
 /** Race distance. */
 export const LAPS = 3;
 
@@ -23,10 +23,10 @@ export const GRID_SIDE = 2.6;
 
 /** The AI field, front of the grid first: quickest on pole. The player starts behind them all. */
 const BOTS: { skill: Skill }[] = [
-  { skill: { pace: 0.9, lookAhead: 7 } },
-  { skill: { pace: 0.86, lookAhead: 6 } },
-  { skill: { pace: 0.82, lookAhead: 7 } },
-  { skill: { pace: 0.78, lookAhead: 6 } },
+  { skill: { pace: 0.94, lookAhead: 7 } },
+  { skill: { pace: 0.9, lookAhead: 6 } },
+  { skill: { pace: 0.86, lookAhead: 7 } },
+  { skill: { pace: 0.82, lookAhead: 6 } },
 ];
 
 /** Where grid slot `k` is: sample index and which side of the road (+1 right, -1 left). */
@@ -49,6 +49,8 @@ export interface SimState {
   car: CarState;
   /** AI cars. Deterministic, so every player meets the same field. */
   bots: CarState[];
+  /** Each AI car's current line: metres right of the centreline it is aiming for (it attacks and defends with this). */
+  botLine: number[];
   /** Per track obstacle: set when a cone is knocked over (tyres never are). */
   knocked: (Knock | null)[];
   /** Index of the next gate to cross. */
@@ -94,6 +96,8 @@ export function createSim(seed: string, track: Track = generateTrack(seed)): Sim
       tick: 0,
       car,
       bots,
+      // Start each AI car aiming at the side of the road its grid slot is on.
+      botLine: BOTS.map((_, k) => gridSlot(track, k).side * GRID_SIDE),
       knocked: track.obstacles.map(() => null),
       nextGate: 1,
       lap: 0,
@@ -138,8 +142,14 @@ function moveCar(sim: Sim, car: CarState, input: number): void {
 }
 
 function moveBots(sim: Sim): void {
-  const { bots } = sim.state;
-  for (let k = 0; k < bots.length; k++) moveCar(sim, bots[k], autopilotInput(sim.track, bots[k], BOTS[k].skill));
+  const s = sim.state;
+  const field = [s.car, ...s.bots];
+  for (let k = 0; k < s.bots.length; k++) {
+    const bot = s.bots[k];
+    const rivals = field.filter((c) => c !== bot);
+    s.botLine[k] = chooseLine(sim.track, bot, rivals, s.botLine[k] ?? 0);
+    moveCar(sim, bot, autopilotInput(sim.track, bot, BOTS[k].skill, s.botLine[k], rivals));
+  }
 }
 
 function collideAll(cars: CarState[]): void {

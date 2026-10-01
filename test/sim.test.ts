@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { createSim, generateTrack, hashState, racePosition, replay, step, DOWN, LAPS, LEFT, RIGHT, STREET_SEED, UP } from "../src/sim";
+import { autopilotInput as drive, chooseLine, createSim, generateTrack, hashState, racePosition, replay, step, DOWN, LAPS, LEFT, RIGHT, STREET_SEED, UP } from "../src/sim";
 import { autopilotInput, autopilotRun } from "./autopilot";
 
 /** A fixed, human-ish input script: accelerate, weave, brake. */
@@ -18,7 +18,7 @@ function scriptedInputs(ticks: number): number[] {
 
 describe("determinism", () => {
   it("same seed + inputs -> identical state every run", () => {
-    const run = { version: 6 as const, seed: "2026-10-01", inputs: scriptedInputs(1800) };
+    const run = { version: 7 as const, seed: "2026-10-01", inputs: scriptedInputs(1800) };
     const a = replay(run);
     const b = replay(run);
     expect(a).toEqual(b);
@@ -28,7 +28,7 @@ describe("determinism", () => {
     const inputs = scriptedInputs(900);
     const sim = createSim("2026-10-01");
     inputs.forEach((i) => step(sim, i));
-    expect(hashState(sim.state)).toBe(replay({ version: 6, seed: "2026-10-01", inputs }).hash);
+    expect(hashState(sim.state)).toBe(replay({ version: 7, seed: "2026-10-01", inputs }).hash);
   });
 
   it("different inputs -> different state", () => {
@@ -36,19 +36,19 @@ describe("determinism", () => {
     const changed = [...inputs];
     changed[10] ^= UP; // lift off the throttle for one tick early on
     const seed = "2026-10-01";
-    expect(replay({ version: 6, seed, inputs }).hash).not.toBe(replay({ version: 6, seed, inputs: changed }).hash);
+    expect(replay({ version: 7, seed, inputs }).hash).not.toBe(replay({ version: 7, seed, inputs: changed }).hash);
   });
 
   // Golden values: if these change, sim behaviour changed and every stored run is invalidated.
   // Update deliberately, never to "make the test pass".
   it("golden: scripted run", () => {
-    expect(replay({ version: 6, seed: "golden", inputs: scriptedInputs(1200) }).hash).toBe("ac848e88");
+    expect(replay({ version: 7, seed: "golden", inputs: scriptedInputs(1200) }).hash).toBe("6f91dfdd");
   });
 
   it("golden: autopilot lap", () => {
     const run = autopilotRun("golden");
     const result = replay(run);
-    expect({ lapTicks: result.lapTicks, hash: result.hash }).toEqual({ lapTicks: 4855, hash: "30d86776" });
+    expect({ lapTicks: result.lapTicks, hash: result.hash }).toEqual({ lapTicks: 4634, hash: "e0b350ce" });
   });
 });
 
@@ -98,6 +98,62 @@ describe("race", () => {
     // The whole AI field keeps racing: every car has covered at least two laps by the time the player finishes.
     const n = sim.track.points.length;
     for (const p of sim.state.progress.slice(1)) expect(p / n).toBeGreaterThan(2);
+  });
+});
+
+describe("racecraft", () => {
+  // Three cars on the main straight of the street circuit, lined up along the road.
+  const track = generateTrack(STREET_SEED);
+  const i = 40;
+  const p = track.points[i];
+  const t = track.tangents[i];
+  const carAt = (along: number, side: number, speed: number) => ({
+    x: p.x + t.x * along - t.z * side,
+    z: p.z + t.z * along + t.x * side,
+    vx: t.x * speed,
+    vz: t.z * speed,
+    heading: 0,
+    speed,
+    steer: 0,
+    offRoad: false,
+  });
+  const settle = (me: ReturnType<typeof carAt>, rivals: ReturnType<typeof carAt>[]) => {
+    let line = 0;
+    for (let k = 0; k < 120; k++) line = chooseLine(track, me, rivals, line);
+    return line;
+  };
+
+  it("with nobody around, holds a line near the middle on a straight", () => {
+    expect(Math.abs(settle(carAt(0, 0, 40), []))).toBeLessThan(1);
+  });
+
+  it("defends: moves across to cover the side a faster car behind is on", () => {
+    expect(settle(carAt(0, 0, 40), [carAt(-8, 2.5, 45)])).toBeGreaterThan(1.5);
+    expect(settle(carAt(0, 0, 40), [carAt(-8, -2.5, 45)])).toBeLessThan(-1.5);
+  });
+
+  it("attacks: pulls out to the emptier side to pass a slower car ahead", () => {
+    // Slower car ahead, slightly right of centre: go left.
+    expect(settle(carAt(0, 0, 45), [carAt(9, 0.8, 38)])).toBeLessThan(-1.5);
+    expect(settle(carAt(0, 0, 45), [carAt(9, -0.8, 38)])).toBeGreaterThan(1.5);
+  });
+
+  it("changes line gradually and never asks for a line off the road", () => {
+    const me = carAt(0, 0, 40);
+    const rival = [carAt(-8, 5, 45)];
+    let line = 0;
+    for (let k = 0; k < 600; k++) {
+      const next = chooseLine(track, me, rival, line);
+      expect(Math.abs(next - line)).toBeLessThanOrEqual(3.2 / 60 + 1e-9);
+      line = next;
+    }
+    expect(Math.abs(line)).toBeLessThanOrEqual(track.halfWidth - 1.5 + 1e-9);
+  });
+
+  it("lifts instead of ramming a slower car directly ahead", () => {
+    const me = carAt(0, 0, 45);
+    expect(drive(track, me, undefined, 0, [carAt(6, 0.3, 30)]) & DOWN).toBe(DOWN);
+    expect(drive(track, me, undefined, 0, [carAt(6, 4, 30)]) & DOWN).toBe(0); // alongside, not in the way
   });
 });
 
@@ -153,7 +209,7 @@ describe("laps", () => {
   it("no lap without passing every checkpoint (reversing over the line)", () => {
     // Drive backwards over the start line: gate 0 is behind the start position.
     const inputs = Array(600).fill(DOWN);
-    expect(replay({ version: 6, seed: "2026-10-01", inputs }).lapTicks).toBeNull();
+    expect(replay({ version: 7, seed: "2026-10-01", inputs }).lapTicks).toBeNull();
   });
 
   it("no lap when skipping a checkpoint", () => {
