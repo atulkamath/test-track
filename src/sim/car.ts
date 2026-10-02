@@ -78,7 +78,7 @@ const OVERSTEER_YAW = 1.2;
 const OVERSTEER_SLIP = 0.14;
 /** Lift-off oversteer only happens above this speed (m/s), and swings the tail this much at full slide. */
 const LIFT_OFF_SPEED = 14;
-const LIFT_OFF_YAW = 1.5;
+const LIFT_OFF_YAW = 0.55;
 /** Fraction of sideways velocity kept each tick; lower = grippier. */
 const GRIP = 0.84;
 const OFFROAD_GRIP = 0.7;
@@ -127,9 +127,9 @@ export function stepCar(car: CarState, input: number): CarState {
         }
       }
       // Lift-off oversteer: arrive too fast, turn hard and come off the throttle (without braking) and the
-      // weight goes forward, the rear goes light and swings round. Dramatic, and catchable by getting back on the power.
-      if (!(input & (UP | DOWN)) && speedAbs > LIFT_OFF_SPEED && car.slide > 0.25) {
-        oversteer = (car.slide - 0.25) / 0.75;
+      // weight goes forward, the rear goes light and the car tucks in tighter with the tail edging out: a nudge, not a spin.
+      if (!(input & (UP | DOWN)) && speedAbs > LIFT_OFF_SPEED && car.slide > 0.4) {
+        oversteer = (car.slide - 0.4) / 0.6;
         got += oversteer * LIFT_OFF_YAW;
       }
       turn = (turn < 0 ? -got : got) * most;
