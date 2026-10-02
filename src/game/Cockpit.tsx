@@ -36,6 +36,23 @@ export interface CockpitHandle {
   airbag(): boolean;
 }
 
+/** Maker's badge for the dashboard: pale lettering, like a plate fixed to the passenger side. */
+function badgeTexture() {
+  const { canvas, texture } = canvasTexture(512, 96);
+  const ctx = canvas.getContext("2d")!;
+  ctx.clearRect(0, 0, 512, 96);
+  ctx.strokeStyle = "rgba(225, 228, 232, 0.55)";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(6, 6, 500, 84);
+  ctx.fillStyle = "rgba(235, 238, 242, 0.9)";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = "italic bold 44px sans-serif";
+  ctx.fillText("GAME BY ATUL K", 256, 50);
+  texture.needsUpdate = true;
+  return texture;
+}
+
 /** What the airbag says when it goes off. */
 function airbagTexture() {
   const { canvas, texture } = canvasTexture(512, 256);
@@ -147,6 +164,9 @@ function drawCluster(canvas: HTMLCanvasElement, texture: THREE.Texture, gear: nu
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(gear === 0 ? "N" : String(gear), 256, 104);
+  ctx.fillStyle = "#8f98a3";
+  ctx.font = "italic 13px sans-serif";
+  ctx.fillText("ATUL K", 256, 168);
   texture.needsUpdate = true;
 }
 
@@ -212,6 +232,7 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
   const state = useRef({ gear: 1, steer: 0, shiftT: 1, lastDash: "", leverFrom: [0, 0] as [number, number], bagT: -1 });
   const bag = useRef<THREE.Group>(null);
   const bagLabel = useMemo(() => airbagTexture(), []);
+  const badge = useMemo(() => badgeTexture(), []);
   const tmp = useMemo(
     () => ({
       pos: new THREE.Vector3(),
@@ -425,6 +446,11 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
           {chrome}
         </mesh>
       ))}
+      {/* Maker's badge on the passenger side of the dash */}
+      <mesh position={[-0.27, 0.69, 0.4365]} rotation={[0, Math.PI, 0]}>
+        <planeGeometry args={[0.3, 0.056]} />
+        <meshBasicMaterial map={badge} transparent opacity={0.8} toneMapped={false} />
+      </mesh>
       {/* Door panels */}
       {[0.67, -0.67].map((x) => (
         <mesh key={x} position={[x, 0.5, 0.1]}>

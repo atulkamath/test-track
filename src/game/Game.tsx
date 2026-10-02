@@ -686,8 +686,7 @@ export default function Game() {
           <div className={styles.hint}>Press ↑ / W to start · C camera · M sound</div>
         </>
       )}
-      {/* Credit: under the race panel in the cockpit view, and on the start screen */}
-      {VIEWS[viewIdx] === "Cockpit" && <div className={styles.credit}>Game by Atul K</div>}
+      {/* Credit on the start screen (the cockpit carries a maker's badge on its dash) */}
       {!started && lapTicks === null && <div className={styles.byline}>Game by Atul K</div>}
       {viewName && <div className={styles.toast}>{viewName}</div>}
       <div className={styles.status}>
