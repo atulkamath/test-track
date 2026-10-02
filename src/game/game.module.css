@@ -342,14 +342,84 @@
 }
 
 /* Map picker on the start screen. */
-.maps {
+.menu {
   position: absolute;
-  bottom: 27%;
+  top: 50%;
   left: 50%;
-  transform: translateX(-50%);
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 26px 34px 20px;
+  border-radius: 14px;
+  background: rgba(8, 10, 16, 0.72);
+  backdrop-filter: blur(6px);
+  font-family: var(--font-exo), system-ui, sans-serif;
+  text-align: center;
+}
+
+.menu h1 {
+  margin: 0 0 6px;
+  font-style: italic;
+  font-weight: 800;
+  font-size: 40px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.step {
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.maps {
   display: flex;
   gap: 12px;
-  font-family: var(--font-exo), system-ui, sans-serif;
+}
+
+.startButton {
+  padding: 12px 34px;
+  border: 0;
+  border-radius: 8px;
+  background: #f2c230;
+  color: #14161a;
+  font: inherit;
+  font-style: italic;
+  font-weight: 800;
+  font-size: 22px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.startButton:hover {
+  background: #ffd44d;
+}
+
+.startButton kbd {
+  margin-left: 10px;
+  padding: 2px 8px;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.18);
+  font: inherit;
+  font-size: 13px;
+  font-style: normal;
+}
+
+.keys {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 16px;
+  max-width: 460px;
+  margin-top: 8px;
+  font-size: 13px;
+  opacity: 0.8;
 }
 
 .map,
@@ -361,9 +431,17 @@
   padding: 10px 16px;
   border-left: 4px solid rgba(255, 255, 255, 0.35);
   background: rgba(8, 10, 16, 0.62);
+  border-top: 0;
+  border-right: 0;
+  border-bottom: 0;
   color: #fff;
-  text-decoration: none;
-  transform: skewX(-10deg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.map:hover {
+  background: rgba(30, 34, 44, 0.8);
 }
 
 .mapOn {
@@ -398,19 +476,13 @@
 }
 
 .byline {
-  position: absolute;
-  bottom: 11%;
-  left: 50%;
-  transform: translateX(-50%);
-  font-family: var(--font-exo), system-ui, sans-serif;
+  margin-top: 8px;
   font-style: italic;
   font-weight: 700;
-  font-size: 15px;
+  font-size: 13px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: #f2c230;
-  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
-  pointer-events: none;
 }
 
 .airbagWrap {

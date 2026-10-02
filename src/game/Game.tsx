@@ -47,15 +47,22 @@ const MAPS = [
 ] as const;
 type MapId = (typeof MAPS)[number]["id"];
 
-/** Which map to load: `?map=circuit` or `?map=sakura` (default). `?seed=...` forces a particular circuit layout. */
-function chosenMap(): { id: MapId; seed: string } {
+type ChosenMap = { id: MapId; seed: string };
+
+/** The seed for a map: the street circuit is fixed, the open circuit gets a new layout each day. */
+function mapFor(id: MapId): ChosenMap {
+  if (id === "sakura") return { id, seed: STREET_SEED };
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return { id, seed: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` };
+}
+
+/** Which map to open with: `?map=circuit` or `?map=sakura` (default). `?seed=...` forces a particular circuit layout. */
+function chosenMap(): ChosenMap {
   const params = new URLSearchParams(window.location.search);
   const seed = params.get("seed");
   if (seed) return { id: "circuit", seed };
-  if (params.get("map") !== "circuit") return { id: "sakura", seed: STREET_SEED };
-  const d = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return { id: "circuit", seed: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` };
+  return mapFor(params.get("map") === "circuit" ? "circuit" : "sakura");
 }
 
 /** Gear + rpm to show: neutral at idle until the run starts. */
@@ -499,8 +506,17 @@ function FrameCap() {
   return null;
 }
 
+/** The whole game. Picking a map on the start screen swaps the race for a fresh one on that map, without reloading the page. */
 export default function Game() {
-  const map = useMemo(() => chosenMap(), []);
+  const [map, setMap] = useState(() => chosenMap());
+  const pickMap = useCallback((id: MapId) => {
+    window.history.replaceState(null, "", `?map=${id}`);
+    setMap((current) => (current.id === id ? current : mapFor(id)));
+  }, []);
+  return <Race key={`${map.id}:${map.seed}`} map={map} onPickMap={pickMap} />;
+}
+
+function Race({ map, onPickMap }: { map: ChosenMap; onPickMap: (id: MapId) => void }) {
   const track = useMemo(() => generateTrack(map.seed), [map]);
   const layout = useMemo(() => buildLayout(track), [track]);
   const skids = useRef<SkidHandle>(null);
@@ -565,10 +581,15 @@ export default function Game() {
     if (!sound.current) sound.current = new Sound();
     sound.current.start();
     input.current = down ? input.current | bit : input.current & ~bit;
-    if (down && !startedRef.current) {
-      startedRef.current = true;
-      setStarted(true);
-    }
+  }, []);
+
+  /** Leave the start screen: the lights begin their countdown. */
+  const begin = useCallback(() => {
+    if (startedRef.current) return;
+    if (!sound.current) sound.current = new Sound();
+    sound.current.start();
+    startedRef.current = true;
+    setStarted(true);
   }, []);
 
   useEffect(() => {
@@ -576,6 +597,10 @@ export default function Game() {
       if (e.code === "KeyR") return restart();
       if (e.code === "KeyC" && !e.repeat) return cycleView();
       if (e.code === "KeyM" && !e.repeat) return toggleMute();
+      if ((e.code === "Enter" || e.code === "Space") && !startedRef.current) {
+        e.preventDefault();
+        return begin();
+      }
       const bit = KEY_BITS[e.code];
       if (bit) {
         e.preventDefault();
@@ -595,7 +620,7 @@ export default function Game() {
       window.removeEventListener("keyup", up);
       window.removeEventListener("blur", blur);
     };
-  }, [press, restart, cycleView, toggleMute]);
+  }, [press, restart, cycleView, toggleMute, begin]);
 
   useEffect(() => () => sound.current?.dispose(), []);
 
@@ -694,21 +719,34 @@ export default function Game() {
         Off road
       </div>
 
+      {/* Start screen: pick a map, then start; the lights count down from there. */}
       {!started && lapTicks === null && (
-        <>
+        <div className={styles.menu}>
+          <h1>Daily Lap</h1>
+          <div className={styles.step}>1 · Choose a map</div>
           <div className={styles.maps}>
             {MAPS.map((m) => (
-              <a key={m.id} href={`?map=${m.id}`} className={m.id === map.id ? styles.mapOn : styles.map}>
+              <button key={m.id} onClick={() => onPickMap(m.id)} aria-pressed={m.id === map.id} className={m.id === map.id ? styles.mapOn : styles.map}>
                 <strong>{m.name}</strong>
                 <span>{m.blurb}</span>
-              </a>
+              </button>
             ))}
           </div>
-          <div className={styles.hint}>Press ↑ / W to start · C camera · M sound</div>
-        </>
+          <div className={styles.step}>2 · Race</div>
+          <button className={styles.startButton} onClick={begin}>
+            Start race <kbd>Enter</kbd>
+          </button>
+          <div className={styles.keys}>
+            <span>↑ / W accelerate</span>
+            <span>↓ / S brake</span>
+            <span>← → steer</span>
+            <span>C camera</span>
+            <span>M sound</span>
+            <span>R restart</span>
+          </div>
+          <div className={styles.byline}>Game by Atul K</div>
+        </div>
       )}
-      {/* Credit on the start screen (the cockpit carries a maker's badge on its dash) */}
-      {!started && lapTicks === null && <div className={styles.byline}>Game by Atul K</div>}
       {airbag && (
         <div className={styles.airbagWrap}>
           <div className={styles.airbagPrompt}>

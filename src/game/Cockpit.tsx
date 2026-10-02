@@ -83,7 +83,7 @@ function airbagFabric() {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.font = "italic 25px sans-serif";
-  ctx.fillText("Engineered by", cx, cy - 30);
+  ctx.fillText("Airbag designed by", cx, cy - 30);
   ctx.font = "bold 34px sans-serif";
   ctx.fillText("Richard Hammond", cx, cy + 10);
   texture.needsUpdate = true;
