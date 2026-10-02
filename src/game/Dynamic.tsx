@@ -132,7 +132,7 @@ export interface SkidHandle {
 }
 
 const SKID_CAPACITY = 2400;
-const SMOKE_CAPACITY = 320;
+const SMOKE_CAPACITY = 200;
 /** Seconds a puff of tyre smoke lasts. */
 const SMOKE_LIFE = 2;
 
@@ -242,7 +242,7 @@ export const SkidMarks = forwardRef<SkidHandle>(function SkidMarks(_, ref) {
       const m = mesh.current;
       if (!m) return;
       const side = car.vx * COS[car.heading] - car.vz * SIN[car.heading];
-      const sliding = !car.offRoad && (Math.abs(side) > 3.2 || car.slide > 0.7 || (braking && car.speed > 22));
+      const sliding = !car.offRoad && (Math.abs(side) > 3.2 || (braking && car.speed > 22));
       if (!sliding) {
         last.current.set(key, null);
         return;
@@ -252,7 +252,7 @@ export const SkidMarks = forwardRef<SkidHandle>(function SkidMarks(_, ref) {
       // Rear wheels: 1 m behind centre, 0.45 m either side.
       const wheels: [number, number][] = [-1, 1].map((s) => [x - fx * 1 + fz * 0.45 * s, z - fz * 1 - fx * 0.45 * s]);
       // A puff from each rear tyre every few frames while it's sliding.
-      if (puffClock.current++ % 3 === 0) for (const [wx, wz] of wheels) smoke.emit(wx, wz);
+      if (puffClock.current++ % 5 === 0) for (const [wx, wz] of wheels) smoke.emit(wx, wz);
       const prev = last.current.get(key);
       if (prev) {
         wheels.forEach(([wx, wz], w) => {

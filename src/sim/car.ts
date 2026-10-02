@@ -50,24 +50,26 @@ const STEER_SPEED_SCALE = 40;
 const STEER_RATE = 5;
 const STEER_RETURN = 8;
 /**
- * The most sideways acceleration the tyres can give (m/s^2, ~2 g: more than a real road car, to keep it fun).
+ * The most sideways acceleration the tyres can give (m/s^2, ~2.4 g: far more than a real road car, to keep it fast).
  * At speed v the car cannot turn faster than LATERAL_GRIP / v, so the tightest line widens with speed squared.
  */
-export const LATERAL_GRIP = 20;
+export const LATERAL_GRIP = 24;
 /** Up to this share of the limit the car does exactly what the wheel asks; beyond it the tyres give progressively less. */
 const GRIP_LINEAR = 0.7;
+/** Share of grip lost when the front tyres are asked for far more than they have (heavy understeer). */
+const OVERDRIVE_LOSS = 0.22;
 /** Braking uses front-tyre grip: this much is left for turning with the brakes on. */
-const BRAKING_TURN_GRIP = 0.75;
+const BRAKING_TURN_GRIP = 0.6;
 const OFFROAD_TURN_GRIP = 0.5;
 /** Sliding tyres scrub speed off (m/s^2 at full slide). */
-const SLIDE_SCRUB = 4;
+const SLIDE_SCRUB = 1.5;
 /** Heading steps per radian. */
 const STEPS_PER_RAD = 4096 / (2 * Math.PI);
 /** Power oversteer, slow corners only: the share of full drive force above which the rear starts to let go. */
-const OVERSTEER_POWER = 0.75;
+const OVERSTEER_POWER = 0.5;
 /** How much extra the tail comes round, and how much rear grip is lost, at full oversteer. */
-const OVERSTEER_YAW = 0.35;
-const OVERSTEER_SLIP = 0.1;
+const OVERSTEER_YAW = 0.9;
+const OVERSTEER_SLIP = 0.13;
 /** Fraction of sideways velocity kept each tick; lower = grippier. */
 const GRIP = 0.84;
 const OFFROAD_GRIP = 0.7;
@@ -99,6 +101,9 @@ export function stepCar(car: CarState, input: number): CarState {
         const extra = asked - GRIP_LINEAR;
         got = GRIP_LINEAR + ((1 - GRIP_LINEAR) * extra) / (extra + (1 - GRIP_LINEAR));
         car.slide = extra > 1.5 ? 1 : extra / 1.5;
+        // Overdriving: tyres asked for far too much give less than their best, so full lock at speed
+        // ploughs wider than a measured turn would.
+        got *= 1 - OVERDRIVE_LOSS * car.slide;
       }
       // Oversteer: hard on the power in a slow corner, the rear tyres can't both drive and hold the line,
       // so the tail steps out a little. Mild, and only where the engine can overwhelm the tyres.
