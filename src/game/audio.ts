@@ -318,7 +318,8 @@ export class Sound {
 
     const s = Math.min(Math.abs(f.speed) / 64, 1);
     // Scrub builds from a gentle slide; the squeal needs a real one (or the wheels close to locking under brakes).
-    const slip = Math.min(Math.max((f.slip - 1.5) / 7, 0), 1);
+    // (A page kept open across a code reload can hand over a state without every field: never pass NaN to the audio graph.)
+    const slip = Number.isFinite(f.slip) ? Math.min(Math.max((f.slip - 1.5) / 7, 0), 1) : 0;
     const locking = f.braking && Math.abs(f.speed) > 22 ? 0.45 : 0;
     const squeal = Math.max(Math.pow(Math.max(slip - 0.3, 0) / 0.7, 1.5), locking);
     this.scrubGain.gain.setTargetAtTime(Math.min(slip * 2.5, 1) * 0.11, t, 0.08);
