@@ -3,6 +3,7 @@
 import { useGLTF } from "@react-three/drei";
 import { forwardRef, useMemo } from "react";
 import * as THREE from "three";
+import { NIGHT } from "./materials";
 import { getPoses, MAN_URL, PART } from "./people";
 
 // Player: Generic Coupe "Azura" by mk2design. AI: Generic passenger car pack by Comrade1280. Both CC-BY 4.0,
@@ -153,7 +154,8 @@ export function animateCar(group: THREE.Group, anim: CarAnim, speed: number, ang
     body.rotation.z = anim.roll;
   }
 
-  for (const lens of anim.brake ?? []) lens.emissiveIntensity = braking ? 4 : 0.2;
+  // Tail lights are on after dark, and brighter still under braking.
+  for (const lens of anim.brake ?? []) lens.emissiveIntensity = braking ? 4 : 0.2 + NIGHT.value * 1.6;
 }
 
 useGLTF.preload(url(PLAYER_MODEL));

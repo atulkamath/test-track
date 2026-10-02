@@ -4,6 +4,7 @@
 import { useFrame } from "@react-three/fiber";
 import { forwardRef, Suspense, useImperativeHandle, useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
+import { NIGHT } from "./materials";
 import { COS, SIN, type CarState } from "@/sim";
 import { animateCar, BOT_MODELS, Car, newCarAnim } from "./Car";
 import type { Engine } from "./engine";
@@ -148,7 +149,7 @@ function makeSmoke() {
   geometry.setAttribute("position", new THREE.BufferAttribute(position, 3));
   geometry.setAttribute("aBirth", new THREE.BufferAttribute(birth, 1));
   geometry.setAttribute("aSeed", new THREE.BufferAttribute(seed, 1));
-  const uniforms = { uTime: { value: 0 } };
+  const uniforms = { uTime: { value: 0 }, uNight: NIGHT };
   const material = new THREE.ShaderMaterial({
     uniforms,
     transparent: true,
@@ -182,6 +183,7 @@ function makeSmoke() {
       varying float vFade;
       varying float vSeed;
       varying float vAge;
+      uniform float uNight;
       void main() {
         vec2 c = gl_PointCoord - 0.5;
         // Turn each puff slowly, and push its edge in and out so it isn't a perfect disc.
@@ -195,7 +197,7 @@ function makeSmoke() {
         if (alpha < 0.004) discard;
         // Sunlit on top, greyer underneath; fresh smoke is whiter than old.
         float lit = 0.74 + 0.2 * smoothstep(0.3, -0.4, c.y) - 0.06 * min(vAge, 1.5);
-        gl_FragColor = vec4(vec3(lit, lit * 0.985, lit * 0.96), alpha);
+        gl_FragColor = vec4(vec3(lit, lit * 0.985, lit * 0.96) * (1.0 - 0.8 * uNight), alpha);
       }`,
   });
   let next = 0;

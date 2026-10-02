@@ -17,6 +17,15 @@ function tex(file: string, repeat: number, srgb: boolean) {
   return t;
 }
 
+/**
+ * Time of day, shared with every shader that needs it: 0 = bright evening (race start) .. 1 = night.
+ * Set once a frame by the day cycle in Game.tsx.
+ */
+export const NIGHT = { value: 0 };
+export function setNight(v: number) {
+  NIGHT.value = v;
+}
+
 export type Surface = "asphalt" | "grass" | "gravel" | "concrete";
 
 /** Colour + normal + roughness maps for a surface. `repeat` = tiles per UV unit. */

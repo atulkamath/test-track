@@ -8,7 +8,7 @@ import { useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { Track } from "@/sim";
 import type { Layout, ModelSpot } from "./layout";
-import { pbr } from "./materials";
+import { NIGHT, pbr } from "./materials";
 
 // Models from Poly Pizza — see CREDITS.md for each one's author and licence.
 const MODEL_NAMES = ["torii", "pagoda", "stonelamp", "redlantern", "bamboo", "sushitruck", "shojiwall", "normalwall", "redwoodwall", "jdoor"];
@@ -30,6 +30,13 @@ function ModelGroup({ name, spots }: { name: string; spots: ModelSpot[] }) {
         material = material.clone();
         material.emissive = material.color.clone();
         material.emissiveIntensity = 0.9;
+        material.userData.glow = [0.9, 3.4];
+      } else if (name === "shojiwall" && material.color && material.color.r + material.color.g + material.color.b > 1.8) {
+        // Paper screens: dark by day, lit from the room behind once evening falls.
+        material = material.clone();
+        material.emissive = new THREE.Color("#ffc980");
+        material.emissiveIntensity = 0;
+        material.userData.glow = [0, 0.85];
       }
       parts.push({ geometry: o.geometry, material, local: toOrigin.clone().multiply(o.matrixWorld) });
     });
@@ -174,7 +181,7 @@ export function Petals() {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute("position", new THREE.BufferAttribute(seeds, 3));
     geometry.setAttribute("aPhase", new THREE.BufferAttribute(phase, 1));
-    const uniforms = { uTime: { value: 0 }, uCam: { value: new THREE.Vector3() } };
+    const uniforms = { uTime: { value: 0 }, uCam: { value: new THREE.Vector3() }, uNight: NIGHT };
     const material = new THREE.ShaderMaterial({
       uniforms,
       transparent: true,
@@ -206,6 +213,7 @@ export function Petals() {
           vNear = 1.0 - smoothstep(18.0, 34.0, -mv.z);
         }`,
       fragmentShader: /* glsl */ `
+        uniform float uNight;
         varying float vShade;
         varying float vNear;
         void main() {
@@ -214,7 +222,7 @@ export function Petals() {
           float d = c.x * c.x * 1.8 + c.y * c.y * 4.2;
           if (d > 0.22 || vNear < 0.02) discard;
           // Clearly pink, and dim enough that the bloom pass leaves them alone.
-          gl_FragColor = vec4(mix(vec3(0.86, 0.42, 0.58), vec3(0.92, 0.62, 0.74), vShade), 0.85 * vNear);
+          gl_FragColor = vec4(mix(vec3(0.86, 0.42, 0.58), vec3(0.92, 0.62, 0.74), vShade) * (1.0 - 0.8 * uNight), 0.85 * vNear);
         }`,
     });
     return { geometry, material, uniforms };

@@ -37,7 +37,10 @@ function useMaterials() {
     ADS.forEach((_, i) => {
       const map = adTexture(i);
       m[`ad${i}`] = new THREE.MeshStandardMaterial({ map, emissive: "#ffffff", emissiveMap: map, emissiveIntensity: 0.2 });
+      // Sponsor boards are back-lit after dark (see the day cycle in Game.tsx).
+      m[`ad${i}`].userData.glow = [0.2, 0.8];
     });
+    m.lamp.userData.glow = [4, 7];
     return m;
   }, []);
 }

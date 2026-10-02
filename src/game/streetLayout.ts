@@ -270,13 +270,17 @@ export function buildStreetLayout(track: Track): Layout {
   const screen: Spot = { ...at(start, out * (wall + 3), -24), rot: start.rot, y: 7.5 };
   reserved.push({ x: tower.x, z: tower.z, r: 5 });
 
-  // Trackside cameras for the TV view: above the grandstand, the tunnel exit, the esses, the hairpin, the old town.
-  for (const i of [20, Math.floor(n * 0.22), Math.floor(n * 0.36), Math.floor(n * 0.5), Math.floor(n * 0.66), Math.floor(n * 0.76), Math.floor(n * 0.9)]) {
+  // Trackside cameras for the TV view: one every 100 m or so, just behind the wall on the inside of the lap and
+  // above the catch fence, so the car is never far from one. In the tunnel it hangs under the roof.
+  for (let i = 10; i < n; i += 50) {
     const f = frame(track, i);
-    const p = at(f, innerSide(i) * (wall + 3));
-    tvSpots.push({ x: p.x, y: 7.5, z: p.z });
+    if (zoneAt(f.x, f.z) === "tunnel") tvSpots.push({ x: f.x, y: 5.2, z: f.z });
+    else {
+      const p = at(f, innerSide(i) * (wall + 1.4));
+      tvSpots.push({ x: p.x, y: 4.8, z: p.z });
+    }
   }
-  tvSpots.push({ x: tower.x, y: 26, z: tower.z });
+
 
   return {
     boxes,

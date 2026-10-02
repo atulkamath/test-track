@@ -10,7 +10,7 @@ import { COS, DOWN, LAPS, LEFT, RIGHT, SIN, STREET_SEED, UP, generateTrack, race
 import { Sound, type OtherCar } from "./audio";
 import { CameraRig, VIEWS } from "./camera";
 import { animateCar, Car, newCarAnim, PLAYER_MODEL } from "./Car";
-import { SUN_DIR } from "./materials";
+import { setNight, SUN_DIR } from "./materials";
 import { Minimap, type MinimapHandle } from "./Minimap";
 import { Cockpit, EYE, type CockpitHandle } from "./Cockpit";
 import { Gearbox } from "./gearbox";
@@ -148,6 +148,102 @@ function updateGears(g: Gearbox, speed: number, delta: number) {
   return g.update(speed, delta);
 }
 
+/** The player's headlights: one wide beam from the nose, aimed a little down the road. Off until dusk. */
+function makeHeadlights() {
+  const light = new THREE.SpotLight("#fff2d6", 0, 120, 0.6, 0.75, 2);
+  light.name = "headlights";
+  light.position.set(0, 0.75, 1.7);
+  light.add(light.target);
+  light.target.position.set(0, -1.4, 24);
+  return light;
+}
+
+const lerp3 = (a: number, b: number, c: number, t: number) => (t < 0.5 ? a + (b - a) * t * 2 : b + (c - b) * (t - 0.5) * 2);
+const SUN_COLORS = [new THREE.Color("#ffe6c2"), new THREE.Color("#ff9a5c"), new THREE.Color("#8fa6e8")];
+const FOG_COLORS = [HORIZON_DAY(), new THREE.Color().setRGB(0.2, 0.13, 0.13, THREE.LinearSRGBColorSpace), new THREE.Color().setRGB(0.008, 0.011, 0.022, THREE.LinearSRGBColorSpace)];
+function HORIZON_DAY() {
+  return new THREE.Color().setRGB(0.45, 0.48, 0.59, THREE.LinearSRGBColorSpace);
+}
+
+/**
+ * Time passes during the race: it starts on a bright evening, the sun goes orange and dim through the second
+ * lap, and the last lap is run at night under lanterns and headlights. Driven by how far round the player is,
+ * so a restart goes back to evening. Everything here is lighting; the sim knows nothing about it.
+ */
+function applyTimeOfDay(scene: THREE.Scene, engine: Engine, memo: { t: number; frame: number; glow: THREE.MeshStandardMaterial[] }) {
+  const s = engine.sim.state;
+  const laps = s.lapTicks !== null ? LAPS : Math.max(0, s.progress[0] / engine.sim.track.points.length);
+  const target = laps < 1 ? laps * 0.25 : Math.min(1, 0.25 + (laps - 1) * 0.85);
+  // Ease toward it; a restart sweeps back to evening in a second or two instead of snapping.
+  memo.t += (target - memo.t) * 0.04;
+  const t = memo.t;
+  setNight(t);
+  scene.backgroundIntensity = lerp3(0.95, 0.4, 0.035, t);
+  scene.environmentIntensity = lerp3(0.32, 0.17, 0.04, t);
+  if (scene.fog) {
+    if (t < 0.5) scene.fog.color.lerpColors(FOG_COLORS[0], FOG_COLORS[1], t * 2);
+    else scene.fog.color.lerpColors(FOG_COLORS[1], FOG_COLORS[2], t * 2 - 1);
+  }
+  const sun = scene.getObjectByName("sun") as THREE.DirectionalLight | undefined;
+  if (sun) {
+    sun.intensity = lerp3(4.3, 1.7, 0.3, t);
+    if (t < 0.5) sun.color.lerpColors(SUN_COLORS[0], SUN_COLORS[1], t * 2);
+    else sun.color.lerpColors(SUN_COLORS[1], SUN_COLORS[2], t * 2 - 1);
+  }
+  const dark = THREE.MathUtils.smoothstep(t, 0.4, 0.8);
+  const head = scene.getObjectByName("headlights") as THREE.SpotLight | undefined;
+  if (head) head.intensity = dark * 650;
+  const stars = scene.getObjectByName("stars") as THREE.Points | undefined;
+  if (stars) (stars.material as THREE.PointsMaterial).opacity = THREE.MathUtils.smoothstep(t, 0.65, 1);
+  // Lamps, lanterns, paper screens and sponsor boards come on as it gets dark. Models load late, so look again now and then.
+  if (memo.frame++ % 90 === 0) {
+    const found = new Set<THREE.MeshStandardMaterial>();
+    scene.traverse((o) => {
+      const mat = o instanceof THREE.Mesh ? (o.material as THREE.MeshStandardMaterial) : null;
+      if (mat?.userData?.glow) found.add(mat);
+    });
+    memo.glow = [...found];
+  }
+  for (const mat of memo.glow) {
+    const [day, night] = mat.userData.glow as [number, number];
+    mat.emissiveIntensity = day + (night - day) * dark;
+  }
+}
+
+function placeStars(stars: THREE.Points, camera: THREE.Camera) {
+  stars.position.copy(camera.position);
+}
+
+/** Day cycle plus a dome of stars that follows the camera and fades in at night. */
+function TimeOfDay({ engine }: { engine: Engine }) {
+  const memo = useMemo(() => ({ t: 0, frame: 0, glow: [] as THREE.MeshStandardMaterial[] }), []);
+  const stars = useRef<THREE.Points>(null);
+  const geometry = useMemo(() => {
+    const pos: number[] = [];
+    let state = 2024;
+    const rnd = () => (state = (state * 1664525 + 1013904223) >>> 0) / 4294967296;
+    for (let i = 0; i < 1400; i++) {
+      // Even spread over the upper hemisphere.
+      const y = 0.04 + rnd() * 0.96;
+      const a = rnd() * Math.PI * 2;
+      const r = Math.sqrt(1 - y * y);
+      pos.push(r * Math.cos(a) * 2600, y * 2600, r * Math.sin(a) * 2600);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    return g;
+  }, []);
+  useFrame(({ scene, camera }) => {
+    applyTimeOfDay(scene, engine, memo);
+    if (stars.current) placeStars(stars.current, camera);
+  });
+  return (
+    <points ref={stars} name="stars" geometry={geometry} frustumCulled={false} renderOrder={-1}>
+      <pointsMaterial color="#dfe8ff" size={1.6} sizeAttenuation={false} transparent opacity={0} depthWrite={false} fog={false} />
+    </points>
+  );
+}
+
 /** Advances the engine every frame and moves the car mesh + chase camera. */
 function Driver({
   engine,
@@ -182,6 +278,7 @@ function Driver({
   // For the sound of the other cars: a gearbox each (so their engines rev believably) and last frame's gaps.
   const botGears = useMemo(() => engine.sim.state.bots.map(() => new Gearbox()), [engine]);
   const lastGaps = useRef<number[]>([]);
+  const headlights = useMemo(() => makeHeadlights(), []);
 
   useFrame(({ camera }, delta) => {
     if (started.current) engine.advance(delta, () => input.current);
@@ -249,6 +346,7 @@ function Driver({
   return (
     <>
       <directionalLight
+        name="sun"
         ref={sun}
         intensity={4.6}
         color="#fff1dc"
@@ -268,6 +366,7 @@ function Driver({
             <Car model={PLAYER_MODEL} />
           </Suspense>
         </group>
+        <primitive object={headlights} />
         <group ref={cockpitGroup} visible={false}>
           <Cockpit ref={cockpit} />
         </group>
@@ -507,6 +606,7 @@ export default function Game() {
         <Crowd people={layout.people} engine={engine} />
         <Helicopter engine={engine} />
         <BigScreen layout={layout} engine={engine} />
+        <TimeOfDay engine={engine} />
         <FrameCap />
         <Effects ao={VIEWS[viewIdx] !== "Cockpit"} />
       </Canvas>
