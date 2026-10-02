@@ -16,6 +16,8 @@ export interface CarState {
   turnRem: number;
   /** 0..1 how hard the tyres are sliding: 0 gripping, rising as the car is asked to turn harder than they can. For sound and smoke. */
   slide: number;
+  /** Brake and throttle held together: front brakes hold the car while the rear tyres spin and smoke. */
+  burnout: boolean;
   offRoad: boolean;
 }
 
@@ -69,6 +71,10 @@ const BRAKING_TURN_GRIP = 0.6;
 const OFFROAD_TURN_GRIP = 0.5;
 /** Sliding tyres scrub speed off (m/s^2 at full slide). */
 const SLIDE_SCRUB = 1.5;
+/** Burnout: only from low speed (m/s); the car creeps at this pace; heading steps per tick the tail swings at full lock. */
+const BURNOUT_SPEED = 8;
+const BURNOUT_CREEP = 0.6;
+const BURNOUT_SPIN = 14;
 /** Heading steps per radian. */
 const STEPS_PER_RAD = 4096 / (2 * Math.PI);
 /** Power oversteer: the share of full drive force above which the rear starts to let go. */
@@ -94,6 +100,15 @@ export function stepCar(car: CarState, input: number): CarState {
   else if (car.steer > want) car.steer = car.steer - rate < want ? want : car.steer - rate;
   let oversteer = 0;
   car.slide = 0;
+  car.burnout = (input & UP) !== 0 && (input & DOWN) !== 0 && speedAbs < BURNOUT_SPEED;
+  if (car.burnout && car.steer !== 0) {
+    // With the rear tyres spinning the tail can be swung round the held front wheels: a donut.
+    const spin = car.steer * BURNOUT_SPIN + car.turnRem;
+    const whole = Math.round(spin);
+    car.turnRem = spin - whole;
+    car.heading = (car.heading + whole) & HEADING_MASK;
+    car.slide = 1;
+  } else
   if (car.steer !== 0) {
     const low = speedAbs < STEER_FULL_SPEED ? speedAbs / STEER_FULL_SPEED : 1;
     const high = 1 / (1 + speedAbs / STEER_SPEED_SCALE);
@@ -146,7 +161,12 @@ export function stepCar(car: CarState, input: number): CarState {
   let fwd = car.vx * fx + car.vz * fz;
   let side = car.vx * fz - car.vz * fx;
 
-  if (input & UP) {
+  if (car.burnout) {
+    // Held on the brakes: creeps forward at walking pace however hard the engine pushes.
+    car.slide = 1;
+    if (fwd > BURNOUT_CREEP) fwd = Math.max(BURNOUT_CREEP, fwd - BRAKE * DT);
+    else fwd = Math.min(BURNOUT_CREEP, fwd + 2 * DT);
+  } else if (input & UP) {
     if (fwd < 0) fwd += BRAKE * DT;
     else {
       const drive = POWER / (fwd < 1 ? 1 : fwd);

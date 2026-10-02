@@ -296,7 +296,7 @@ function Driver({
     // The sim's own steering wheel position (it ramps), so the visible wheels match what the car is doing.
     const steer = engine.sim.state.car.steer;
     const braking = (input.current & DOWN) !== 0 && speed > 0.5 && !engine.finished;
-    if (car.current) animateCar(car.current, anim, speed, p.angle, engine.finished ? 0 : steer, braking, delta);
+    if (car.current) animateCar(car.current, anim, speed, p.angle, engine.finished ? 0 : steer, braking, delta, engine.sim.state.car.burnout);
     skids.current?.track("player", engine.sim.state.car, p.x, p.z, p.angle, braking);
     // Keep the shadow camera centred on the car so a small shadow map stays sharp.
     if (sun.current) {
@@ -351,11 +351,12 @@ function Driver({
     const slip = Math.abs(sim.vx * COS[sim.heading] - sim.vz * SIN[sim.heading]);
     const others = hearOtherCars(engine, botGears, lastGaps.current, p, delta);
     sound.current?.update({
-      rpm: started.current ? gears.rpm : 900,
+      // In a burnout the wheels spin free of the road: the engine screams near the limiter whatever the speed.
+      rpm: !started.current ? 900 : sim.burnout ? 6400 + 350 * Math.sin(performance.now() / 45) : gears.rpm,
       throttle: started.current && !engine.finished && (input.current & UP) !== 0,
       speed,
       // Sideways speed, or how hard the tyres are sliding at the grip limit, whichever is louder.
-      slip: sim.offRoad ? 0 : Math.max(slip, (sim.slide ?? 0) * 7),
+      slip: sim.offRoad ? 0 : Math.max(slip, (sim.slide ?? 0) * 7, sim.burnout ? 9 : 0),
       crowd: cn.level,
       tunnel: layout.tunnels?.some((t) => engine.sim.state.trackIndex[0] >= t.from && engine.sim.state.trackIndex[0] < t.to) ? 1 : 0,
       braking,

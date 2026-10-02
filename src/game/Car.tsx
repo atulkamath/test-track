@@ -90,7 +90,7 @@ export const newCarAnim = (): CarAnim => ({ steer: 0, pitch: 0, roll: 0, lastSpe
  * Visual-only life for a car: rolling wheels, front-wheel steer, suspension pitch/roll, brake lights.
  * `steer` is -1..1 (left positive), `braking` lights the tail.
  */
-export function animateCar(group: THREE.Group, anim: CarAnim, speed: number, angle: number, steer: number, braking: boolean, delta: number) {
+export function animateCar(group: THREE.Group, anim: CarAnim, speed: number, angle: number, steer: number, braking: boolean, delta: number, burnout = false) {
   if (delta <= 0) return;
   const k = (rate: number) => 1 - Math.exp(-delta * rate);
   if (anim.wheelRadius === undefined) {
@@ -105,7 +105,8 @@ export function animateCar(group: THREE.Group, anim: CarAnim, speed: number, ang
   for (const name of ALL_WHEELS) {
     const w = group.getObjectByName(name);
     if (!w) continue;
-    w.rotation.x += (speed * delta) / anim.wheelRadius;
+    // In a burnout the rear wheels spin up while the car barely moves.
+    w.rotation.x += ((burnout && !FRONT_WHEELS.includes(name) ? 30 : speed) * delta) / anim.wheelRadius;
     if (FRONT_WHEELS.includes(name)) w.rotation.y = anim.steer;
   }
 
