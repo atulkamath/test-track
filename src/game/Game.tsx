@@ -23,7 +23,7 @@ import { Tacho, type TachoHandle } from "./Tacho";
 import { Pylons, Ridges, Town } from "./Background";
 import { CarPark, CircuitBoxes, FerrisWheel, Flags, GravelTraps, Tents, TimingTower } from "./Circuit";
 import { buildLayout, type Layout } from "./layout";
-import { Canals, Models, Pavements, Petals, StreetLights } from "./Street";
+import { Canals, Models, Pavements, Petals, Lanterns, StreetLights } from "./Street";
 import { makeHeight } from "./terrain";
 import { Billboards } from "./Trackside";
 import styles from "./game.module.css";
@@ -178,21 +178,25 @@ function applyTimeOfDay(scene: THREE.Scene, engine: Engine, memo: { t: number; f
   memo.t += (target - memo.t) * 0.04;
   const t = memo.t;
   setNight(t);
-  scene.backgroundIntensity = lerp3(0.95, 0.4, 0.035, t);
-  scene.environmentIntensity = lerp3(0.32, 0.17, 0.04, t);
+  // Night is a deep blue dusk, not black: the cars must stay easy to read.
+  scene.backgroundIntensity = lerp3(0.95, 0.42, 0.075, t);
+  scene.environmentIntensity = lerp3(0.32, 0.2, 0.13, t);
   if (scene.fog) {
     if (t < 0.5) scene.fog.color.lerpColors(FOG_COLORS[0], FOG_COLORS[1], t * 2);
     else scene.fog.color.lerpColors(FOG_COLORS[1], FOG_COLORS[2], t * 2 - 1);
   }
   const sun = scene.getObjectByName("sun") as THREE.DirectionalLight | undefined;
   if (sun) {
-    sun.intensity = lerp3(4.3, 1.7, 0.3, t);
+    sun.intensity = lerp3(4.3, 1.8, 0.75, t);
     if (t < 0.5) sun.color.lerpColors(SUN_COLORS[0], SUN_COLORS[1], t * 2);
     else sun.color.lerpColors(SUN_COLORS[1], SUN_COLORS[2], t * 2 - 1);
   }
   const dark = THREE.MathUtils.smoothstep(t, 0.4, 0.8);
   const head = scene.getObjectByName("headlights") as THREE.SpotLight | undefined;
   if (head) head.intensity = dark * 650;
+  // Street lighting on the cars: one warm light that rides above the player, so it never switches on or off.
+  const street = scene.getObjectByName("streetlight") as THREE.PointLight | undefined;
+  if (street) street.intensity = dark * 60;
   const stars = scene.getObjectByName("stars") as THREE.Points | undefined;
   if (stars) (stars.material as THREE.PointsMaterial).opacity = THREE.MathUtils.smoothstep(t, 0.65, 1);
   // Lamps, lanterns, paper screens and sponsor boards come on as it gets dark. Models load late, so look again now and then.
@@ -329,12 +333,12 @@ function Driver({
       for (const f of layout.people) if ((f.x - p.x) ** 2 + (f.z - p.z) ** 2 < 90 * 90) near++;
       cn.level = Math.min(1, near / 350);
     }
-    // Impacts: nothing in normal driving changes the car's velocity by more than a fraction of a metre per
-    // second in one frame, so a jump means it hit something. Another car close by = metal on metal; otherwise a wall.
+    // Impacts: a hit changes the car's velocity in a single tick, far more abruptly than the hardest braking
+    // (15 m/s^2) ever does, so look for a violent rate of change. Another car close by = metal on metal; otherwise a wall.
     const hit = lastVel.current;
     const jolt = Math.hypot(sim.vx - hit.vx, sim.vz - hit.vz);
     hit.cool -= delta;
-    if (started.current && jolt > 2 && hit.cool <= 0) {
+    if (started.current && jolt > 1.5 && jolt / Math.max(delta, 1 / 60) > 75 && hit.cool <= 0) {
       const car = engine.sim.state.bots.some((b) => (b.x - sim.x) ** 2 + (b.z - sim.z) ** 2 < 4.8 * 4.8);
       sound.current?.impact(car ? "car" : "wall", Math.min(1, jolt / 12));
       hit.cool = 0.22;
@@ -381,6 +385,7 @@ function Driver({
           </Suspense>
         </group>
         <primitive object={headlights} />
+        <pointLight name="streetlight" position={[0, 5, 1.5]} color="#ffd9a8" intensity={0} distance={24} decay={2} />
         <group ref={cockpitGroup} visible={false}>
           <Cockpit ref={cockpit} />
         </group>
@@ -418,6 +423,7 @@ function World({ track, layout }: { track: Track; layout: Layout }) {
           <Suspense fallback={null}>
             <Models layout={layout} />
           </Suspense>
+          <Lanterns layout={layout} />
           <Petals />
           {layout.lamps && <StreetLights lamps={layout.lamps} />}
         </>

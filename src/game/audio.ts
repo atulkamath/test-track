@@ -329,7 +329,7 @@ export class Sound {
     this.squealBands.forEach((band, i) => band.frequency.setTargetAtTime((i === 0 ? 930 : 1400) - slip * 130 + wander * (i + 1), t, 0.05));
     this.windGain.gain.setTargetAtTime(s * s * 0.12, t, 0.1);
     const brake = f.braking ? Math.min(Math.max((Math.abs(f.speed) - 4) / 35, 0), 1) : 0;
-    this.brakeGain.gain.setTargetAtTime(brake * 0.16, t, 0.08);
+    this.brakeGain.gain.setTargetAtTime(brake * 0.05, t, 0.15);
     this.tunnelSend.gain.setTargetAtTime(f.tunnel * 0.75, t, 0.12);
     this.crowdGain.gain.setTargetAtTime(0.015 + f.crowd * 0.2, t, 0.3);
     this.crowdFilter.frequency.setTargetAtTime(500 + f.crowd * 500, t, 0.3);

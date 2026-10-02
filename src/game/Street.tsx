@@ -11,7 +11,7 @@ import type { Layout, ModelSpot } from "./layout";
 import { NIGHT, pbr } from "./materials";
 
 // Models from Poly Pizza — see CREDITS.md for each one's author and licence.
-const MODEL_NAMES = ["torii", "pagoda", "stonelamp", "redlantern", "bamboo", "sushitruck", "shojiwall", "normalwall", "redwoodwall", "jdoor"];
+const MODEL_NAMES = ["torii", "pagoda", "stonelamp", "bamboo", "sushitruck", "shojiwall", "normalwall", "redwoodwall", "jdoor"];
 const modelUrl = (name: string) => `/models/jp/${name}.glb`;
 
 /** One model drawn at many spots: an InstancedMesh per mesh inside it, normalised to bottom-centre and unit height. */
@@ -25,13 +25,7 @@ function ModelGroup({ name, spots }: { name: string; spots: ModelSpot[] }) {
     scene.traverse((o) => {
       if (!(o instanceof THREE.Mesh)) return;
       let material = o.material as THREE.MeshStandardMaterial;
-      if (name === "redlantern" && material.color && material.color.r > material.color.g * 1.5) {
-        // Paper lanterns are lit from inside: make the red paper glow (the bloom pass picks it up).
-        material = material.clone();
-        material.emissive = material.color.clone();
-        material.emissiveIntensity = 0.9;
-        material.userData.glow = [0.9, 3.4];
-      } else if (name === "shojiwall" && material.color && material.color.r + material.color.g + material.color.b > 1.8) {
+      if (name === "shojiwall" && material.color && material.color.r + material.color.g + material.color.b > 1.8) {
         // Paper screens: dark by day, lit from the room behind once evening falls.
         material = material.clone();
         material.emissive = new THREE.Color("#ffc980");
@@ -78,7 +72,8 @@ function ModelGroup({ name, spots }: { name: string; spots: ModelSpot[] }) {
 export function Models({ layout }: { layout: Layout }) {
   const byModel = useMemo(() => {
     const groups = new Map<string, ModelSpot[]>();
-    for (const s of layout.models ?? []) groups.set(s.model, [...(groups.get(s.model) ?? []), s]);
+    // Lanterns are built in code (see Lanterns), not drawn from a model.
+    for (const s of layout.models ?? []) if (s.model !== "redlantern") groups.set(s.model, [...(groups.get(s.model) ?? []), s]);
     return [...groups.entries()];
   }, [layout]);
   return (
@@ -156,8 +151,7 @@ export function Pavements({ track }: { track: Track }) {
   );
 }
 
-const LAMP_REACH = 9;
-const REAL_LIGHTS = 2;
+const LAMP_REACH = 11;
 
 function placeLamps(mesh: THREE.InstancedMesh, lamps: { x: number; z: number }[]) {
   const m = new THREE.Matrix4();
@@ -165,31 +159,48 @@ function placeLamps(mesh: THREE.InstancedMesh, lamps: { x: number; z: number }[]
   mesh.instanceMatrix.needsUpdate = true;
 }
 
-/** Move the few real lights to the lamps nearest the camera, fading each with distance so the hand-over never pops. */
-function aimRealLights(lights: (THREE.PointLight | null)[], lamps: { x: number; y: number; z: number }[], camera: THREE.Camera) {
-  const dark = THREE.MathUtils.smoothstep(NIGHT.value, 0.4, 0.8);
-  const near = dark > 0 ? [...lamps].sort((a, b) => (a.x - camera.position.x) ** 2 + (a.z - camera.position.z) ** 2 - (b.x - camera.position.x) ** 2 - (b.z - camera.position.z) ** 2) : [];
-  lights.forEach((light, i) => {
-    if (!light) return;
-    const lamp = near[i];
-    if (!lamp) {
-      light.intensity = 0;
-      return;
-    }
-    light.position.set(lamp.x, lamp.y - 0.3, lamp.z);
-    const d = Math.hypot(lamp.x - camera.position.x, lamp.z - camera.position.z);
-    light.intensity = dark * 110 * (1 - THREE.MathUtils.smoothstep(d, 30, 55));
-  });
+/**
+ * Soft glows that hang in the air round a light source after dark (lamp heads, lanterns): one camera-facing
+ * sprite each, added on top of the picture. `size` is the glow's width in metres.
+ */
+export function Halos({ at, color, size, strength }: { at: { x: number; y: number; z: number }[]; color: string; size: number; strength: number }) {
+  const { geometry, material } = useMemo(() => {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(at.flatMap((p) => [p.x, p.y, p.z]), 3));
+    const material = new THREE.ShaderMaterial({
+      uniforms: { uNight: NIGHT, uColor: { value: new THREE.Color(color) }, uSize: { value: size }, uStrength: { value: strength } },
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      vertexShader: /* glsl */ `
+        uniform float uSize;
+        void main() {
+          vec4 mv = viewMatrix * vec4(position, 1.0);
+          gl_Position = projectionMatrix * mv;
+          gl_PointSize = min(uSize * 900.0 / max(-mv.z, 1.0), 220.0);
+        }`,
+      fragmentShader: /* glsl */ `
+        uniform float uNight;
+        uniform vec3 uColor;
+        uniform float uStrength;
+        void main() {
+          float d = length(gl_PointCoord - 0.5) * 2.0;
+          float a = pow(max(1.0 - d, 0.0), 2.4) * smoothstep(0.35, 0.8, uNight) * uStrength;
+          gl_FragColor = vec4(uColor * a, a);
+        }`,
+    });
+    return { geometry, material };
+  }, [at, color, size, strength]);
+  return <points geometry={geometry} material={material} frustumCulled={false} />;
 }
 
 /**
- * Street lighting after dark. Every lamp throws a warm pool of light on the road (a soft glowing disc: costs
- * almost nothing), and the two lamps nearest the camera also carry a real light, so the cars and walls passing
- * under them are actually lit.
+ * Street lighting after dark: every lamp is on, all the time. Each throws a warm pool of light on the road (a
+ * soft glowing disc) and has a glow round its head. The cars themselves are lit by a light that travels with
+ * the player (see Game.tsx), so nothing switches on or off as you drive past.
  */
 export function StreetLights({ lamps }: { lamps: { x: number; y: number; z: number }[] }) {
   const pools = useRef<THREE.InstancedMesh>(null);
-  const lights = useRef<(THREE.PointLight | null)[]>([]);
   const { geometry, material } = useMemo(() => {
     const geometry = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
     const material = new THREE.ShaderMaterial({
@@ -210,8 +221,8 @@ export function StreetLights({ lamps }: { lamps: { x: number; y: number; z: numb
         varying vec2 vUv;
         void main() {
           float d = length(vUv - 0.5) * 2.0;
-          float a = pow(1.0 - smoothstep(0.0, 1.0, d), 1.7) * smoothstep(0.4, 0.8, uNight) * 0.3;
-          gl_FragColor = vec4(vec3(1.0, 0.76, 0.46) * a, a);
+          float a = pow(1.0 - smoothstep(0.0, 1.0, d), 1.5) * smoothstep(0.35, 0.8, uNight) * 0.55;
+          gl_FragColor = vec4(vec3(1.0, 0.78, 0.5) * a, a);
         }`,
     });
     return { geometry, material };
@@ -219,14 +230,91 @@ export function StreetLights({ lamps }: { lamps: { x: number; y: number; z: numb
   useLayoutEffect(() => {
     if (pools.current) placeLamps(pools.current, lamps);
   }, [lamps]);
-  useFrame(({ camera }) => aimRealLights(lights.current, lamps, camera));
   return (
     <>
       <instancedMesh ref={pools} args={[geometry, material, lamps.length]} frustumCulled={false} />
-      {Array.from({ length: REAL_LIGHTS }, (_, i) => (
-        <pointLight key={i} ref={(l) => void (lights.current[i] = l)} color="#ffd29a" intensity={0} distance={26} decay={2} />
-      ))}
+      <Halos at={lamps} color="#ffd9a0" size={2.6} strength={0.55} />
     </>
+  );
+}
+
+/** Paper for the lanterns: red, ribbed with thin bamboo hoops, and brightest round the middle where the flame is. */
+function lanternPaper() {
+  const c = document.createElement("canvas");
+  c.width = 64;
+  c.height = 256;
+  const ctx = c.getContext("2d")!;
+  const g = ctx.createLinearGradient(0, 0, 0, 256);
+  g.addColorStop(0, "#7d130c");
+  g.addColorStop(0.3, "#d8331c");
+  g.addColorStop(0.52, "#ff8a4a");
+  g.addColorStop(0.72, "#d8331c");
+  g.addColorStop(1, "#7d130c");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 64, 256);
+  ctx.fillStyle = "rgba(70, 8, 4, 0.5)";
+  for (let y = 10; y < 256; y += 15) ctx.fillRect(0, y, 64, 2);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+function placeLanterns(meshes: (THREE.InstancedMesh | null)[], spots: ModelSpot[]) {
+  const m = new THREE.Matrix4();
+  // Body, top cap, bottom cap, tassel: heights within a lantern of total height 1 hung from its top.
+  const parts: [y: number, sx: number, sy: number][] = [
+    [0.52, 1, 1],
+    [0.9, 1, 1],
+    [0.14, 1, 1],
+    [0.02, 1, 1],
+  ];
+  meshes.forEach((mesh, k) => {
+    if (!mesh) return;
+    spots.forEach((s, i) => {
+      const [y] = parts[k];
+      mesh.setMatrixAt(i, m.makeScale(s.height, s.height, s.height).setPosition(s.x, s.y + y * s.height, s.z));
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.computeBoundingSphere();
+  });
+}
+
+/**
+ * Paper lanterns strung over the old town: a ribbed red paper globe glowing from within, black lacquered caps
+ * top and bottom, and a gold tassel. They are lit from the start (it is evening) and glow brighter after dark,
+ * each with a soft halo.
+ */
+export function Lanterns({ layout }: { layout: Layout }) {
+  const spots = useMemo(() => (layout.models ?? []).filter((s) => s.model === "redlantern"), [layout]);
+  const refs = useRef<(THREE.InstancedMesh | null)[]>([]);
+  const paper = useMemo(() => {
+    const map = lanternPaper();
+    const m = new THREE.MeshStandardMaterial({ map, emissive: "#ffffff", emissiveMap: map, emissiveIntensity: 0.55, roughness: 0.9 });
+    m.userData.glow = [0.55, 1.5];
+    return m;
+  }, []);
+  const halos = useMemo(() => spots.map((s) => ({ x: s.x, y: s.y + 0.5 * s.height, z: s.z })), [spots]);
+  useLayoutEffect(() => placeLanterns(refs.current, spots), [spots]);
+  if (spots.length === 0) return null;
+  return (
+    <group>
+      <instancedMesh ref={(m) => void (refs.current[0] = m)} args={[undefined, paper, spots.length]}>
+        <sphereGeometry args={[0.36, 20, 14]} />
+      </instancedMesh>
+      <instancedMesh ref={(m) => void (refs.current[1] = m)} args={[undefined, undefined, spots.length]}>
+        <cylinderGeometry args={[0.15, 0.2, 0.09, 14]} />
+        <meshStandardMaterial color="#111214" roughness={0.35} metalness={0.3} />
+      </instancedMesh>
+      <instancedMesh ref={(m) => void (refs.current[2] = m)} args={[undefined, undefined, spots.length]}>
+        <cylinderGeometry args={[0.2, 0.15, 0.09, 14]} />
+        <meshStandardMaterial color="#111214" roughness={0.35} metalness={0.3} />
+      </instancedMesh>
+      <instancedMesh ref={(m) => void (refs.current[3] = m)} args={[undefined, undefined, spots.length]}>
+        <cylinderGeometry args={[0.035, 0.012, 0.2, 8]} />
+        <meshStandardMaterial color="#d9a23a" roughness={0.6} metalness={0.4} />
+      </instancedMesh>
+      <Halos at={halos} color="#ff6a30" size={1.5} strength={0.4} />
+    </group>
   );
 }
 

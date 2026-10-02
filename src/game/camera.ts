@@ -24,11 +24,11 @@ interface Follow {
 }
 
 // Chase cameras work the way racing games do it: the camera orbits the car at a set distance, so the car stays
-// the same size and place on screen at any speed. Only the orbit angle lags, so in a turn the car swings in the
-// frame and the view catches up. Speed is sold by the lens widening and the camera easing back slightly, plus a
-// small spring: it drops back under hard acceleration and closes in under braking.
+// the same place on screen at any speed. Only the orbit angle lags, so in a turn the car swings in the
+// frame and the view catches up. Speed is sold by the lens widening; the default chase view also moves in
+// closer as it widens, so the car doesn't shrink. Plus a small spring: back under hard acceleration, in under braking.
 const FOLLOW: Record<Exclude<View, "TV" | "Cockpit">, Follow> = {
-  Chase: { back: 5.2, backSpeed: 1.9, up: 1.65, upSpeed: -0.27, ahead: 6, lookY: 1.05, yawRate: 5.5, fov: 58, fovSpeed: 31 },
+  Chase: { back: 4.9, backSpeed: -0.9, up: 1.6, upSpeed: -0.25, ahead: 6, lookY: 1.05, yawRate: 5.5, fov: 58, fovSpeed: 24 },
   "Far chase": { back: 9.5, backSpeed: 2.4, up: 3.6, upSpeed: -0.4, ahead: 6, lookY: 1, yawRate: 4, fov: 56, fovSpeed: 26 },
   Roof: { back: -0.3, backSpeed: 0, up: 2.05, upSpeed: 0, ahead: 20, lookY: 1.4, yawRate: 60, fov: 70, fovSpeed: 19 },
   Bumper: { back: -2.05, backSpeed: 0, up: 0.7, upSpeed: 0, ahead: 20, lookY: 0.9, yawRate: 80, fov: 74, fovSpeed: 19 },
@@ -132,7 +132,7 @@ export class CameraRig {
       // Acceleration spring (chase views only): back under power, forward under braking.
       const accel = delta > 0 ? (speed - this.lastSpeed) / delta : 0;
       this.lastSpeed = speed;
-      const pullTarget = f.backSpeed > 0 ? THREE.MathUtils.clamp(accel * 0.045, -0.55, 0.6) : 0;
+      const pullTarget = f.backSpeed !== 0 ? THREE.MathUtils.clamp(accel * 0.045, -0.55, 0.6) : 0;
       this.pull += (pullTarget - this.pull) * (1 - Math.exp(-delta * 3));
 
       // Speed effects build early: most of a lap is spent at 100-150 km/h, well short of top speed.
