@@ -31,6 +31,7 @@ export function buildStreetLayout(track: Track): Layout {
   const models: ModelSpot[] = [];
   const trees: TreeSpot[] = [];
   const tunnels: { from: number; to: number }[] = [];
+  const lamps: { x: number; y: number; z: number }[] = [];
   const wall = hw + STREET_WALL_GAP;
 
   let cx = 0;
@@ -138,6 +139,15 @@ export function buildStreetLayout(track: Track): Layout {
     if (zone !== "tunnel" && tunnelFrom >= 0) {
       tunnels.push({ from: tunnelFrom, to: i });
       tunnelFrom = -1;
+    }
+
+    // Street lamps everywhere but the tunnel: a post behind the wall, alternating sides, its arm reaching out over the road.
+    if (zone !== "tunnel" && seg % 3 === 0) {
+      const lampSide = (seg / 3) % 2 ? 1 : -1;
+      add(f, lampSide * (wall + 0.6), 3.3, 0.14, 6.6, 0.14, "steel");
+      add(f, lampSide * (wall - 0.5), 6.55, 2.3, 0.09, 0.09, "steel");
+      add(f, lampSide * (wall - 1.5), 6.45, 0.75, 0.12, 0.32, "streetlamp");
+      lamps.push({ ...at(f, lampSide * (wall - 1.5)), y: 6.35 });
     }
 
     if (zone === "straight") {
@@ -288,6 +298,7 @@ export function buildStreetLayout(track: Track): Layout {
     models,
     trees,
     tunnels,
+    lamps,
     canals,
     tvSpots,
     tents: [],

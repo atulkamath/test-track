@@ -156,6 +156,80 @@ export function Pavements({ track }: { track: Track }) {
   );
 }
 
+const LAMP_REACH = 9;
+const REAL_LIGHTS = 2;
+
+function placeLamps(mesh: THREE.InstancedMesh, lamps: { x: number; z: number }[]) {
+  const m = new THREE.Matrix4();
+  lamps.forEach((l, i) => mesh.setMatrixAt(i, m.makeScale(LAMP_REACH * 2, 1, LAMP_REACH * 2).setPosition(l.x, 0.045, l.z)));
+  mesh.instanceMatrix.needsUpdate = true;
+}
+
+/** Move the few real lights to the lamps nearest the camera, fading each with distance so the hand-over never pops. */
+function aimRealLights(lights: (THREE.PointLight | null)[], lamps: { x: number; y: number; z: number }[], camera: THREE.Camera) {
+  const dark = THREE.MathUtils.smoothstep(NIGHT.value, 0.4, 0.8);
+  const near = dark > 0 ? [...lamps].sort((a, b) => (a.x - camera.position.x) ** 2 + (a.z - camera.position.z) ** 2 - (b.x - camera.position.x) ** 2 - (b.z - camera.position.z) ** 2) : [];
+  lights.forEach((light, i) => {
+    if (!light) return;
+    const lamp = near[i];
+    if (!lamp) {
+      light.intensity = 0;
+      return;
+    }
+    light.position.set(lamp.x, lamp.y - 0.3, lamp.z);
+    const d = Math.hypot(lamp.x - camera.position.x, lamp.z - camera.position.z);
+    light.intensity = dark * 110 * (1 - THREE.MathUtils.smoothstep(d, 30, 55));
+  });
+}
+
+/**
+ * Street lighting after dark. Every lamp throws a warm pool of light on the road (a soft glowing disc: costs
+ * almost nothing), and the two lamps nearest the camera also carry a real light, so the cars and walls passing
+ * under them are actually lit.
+ */
+export function StreetLights({ lamps }: { lamps: { x: number; y: number; z: number }[] }) {
+  const pools = useRef<THREE.InstancedMesh>(null);
+  const lights = useRef<(THREE.PointLight | null)[]>([]);
+  const { geometry, material } = useMemo(() => {
+    const geometry = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+    const material = new THREE.ShaderMaterial({
+      uniforms: { uNight: NIGHT },
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      polygonOffset: true,
+      polygonOffsetFactor: -3,
+      vertexShader: /* glsl */ `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * viewMatrix * modelMatrix * instanceMatrix * vec4(position, 1.0);
+        }`,
+      fragmentShader: /* glsl */ `
+        uniform float uNight;
+        varying vec2 vUv;
+        void main() {
+          float d = length(vUv - 0.5) * 2.0;
+          float a = pow(1.0 - smoothstep(0.0, 1.0, d), 1.7) * smoothstep(0.4, 0.8, uNight) * 0.3;
+          gl_FragColor = vec4(vec3(1.0, 0.76, 0.46) * a, a);
+        }`,
+    });
+    return { geometry, material };
+  }, []);
+  useLayoutEffect(() => {
+    if (pools.current) placeLamps(pools.current, lamps);
+  }, [lamps]);
+  useFrame(({ camera }) => aimRealLights(lights.current, lamps, camera));
+  return (
+    <>
+      <instancedMesh ref={pools} args={[geometry, material, lamps.length]} frustumCulled={false} />
+      {Array.from({ length: REAL_LIGHTS }, (_, i) => (
+        <pointLight key={i} ref={(l) => void (lights.current[i] = l)} color="#ffd29a" intensity={0} distance={26} decay={2} />
+      ))}
+    </>
+  );
+}
+
 const PETALS = 1400;
 
 function petalUniforms(u: { uTime: { value: number }; uCam: { value: THREE.Vector3 } }, time: number, cam: THREE.Vector3) {

@@ -71,14 +71,14 @@ const OFFROAD_TURN_GRIP = 0.5;
 const SLIDE_SCRUB = 1.5;
 /** Heading steps per radian. */
 const STEPS_PER_RAD = 4096 / (2 * Math.PI);
-/** Power oversteer, slow corners only: the share of full drive force above which the rear starts to let go. */
-const OVERSTEER_POWER = 0.5;
+/** Power oversteer: the share of full drive force above which the rear starts to let go. */
+const OVERSTEER_POWER = 0.3;
 /** How much extra the tail comes round, and how much rear grip is lost, at full oversteer. */
-const OVERSTEER_YAW = 0.9;
-const OVERSTEER_SLIP = 0.13;
+const OVERSTEER_YAW = 1.2;
+const OVERSTEER_SLIP = 0.14;
 /** Lift-off oversteer only happens above this speed (m/s), and swings the tail this much at full slide. */
-const LIFT_OFF_SPEED = 20;
-const LIFT_OFF_YAW = 1.1;
+const LIFT_OFF_SPEED = 14;
+const LIFT_OFF_YAW = 1.5;
 /** Fraction of sideways velocity kept each tick; lower = grippier. */
 const GRIP = 0.84;
 const OFFROAD_GRIP = 0.7;
@@ -115,7 +115,7 @@ export function stepCar(car: CarState, input: number): CarState {
         got *= 1 - OVERDRIVE_LOSS * car.slide;
       }
       // Oversteer: hard on the power in a slow corner, the rear tyres can't both drive and hold the line,
-      // so the tail steps out a little. Mild, and only where the engine can overwhelm the tyres.
+      // so the tail steps out. Strongest in slow corners, where the engine can overwhelm the tyres.
       if (input & UP && car.speed > 0 && got > 0.6) {
         const drive = POWER / (speedAbs < 1 ? 1 : speedAbs);
         const power = (drive < TRACTION ? drive : TRACTION) / TRACTION;
@@ -128,8 +128,8 @@ export function stepCar(car: CarState, input: number): CarState {
       }
       // Lift-off oversteer: arrive too fast, turn hard and come off the throttle (without braking) and the
       // weight goes forward, the rear goes light and swings round. Dramatic, and catchable by getting back on the power.
-      if (!(input & (UP | DOWN)) && speedAbs > LIFT_OFF_SPEED && car.slide > 0.5) {
-        oversteer = (car.slide - 0.5) * 2;
+      if (!(input & (UP | DOWN)) && speedAbs > LIFT_OFF_SPEED && car.slide > 0.25) {
+        oversteer = (car.slide - 0.25) / 0.75;
         got += oversteer * LIFT_OFF_YAW;
       }
       turn = (turn < 0 ? -got : got) * most;

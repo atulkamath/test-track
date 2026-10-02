@@ -143,7 +143,7 @@ export function createDriver(scene: THREE.Object3D, look: { suit?: string; first
     // Curl the fingers toward the palm, a bit more at each joint, so the hand is closed round a rim or a knob.
     const hinge = new THREE.Vector3().crossVectors(fingers, palm).normalize();
     for (const finger of FINGERS)
-      [0.75, 1.05, 0.7].forEach((angle, joint) => {
+      [0.5, 0.95, 0.6].forEach((angle, joint) => {
         const bone = bones.get(`${side}Hand${finger}${joint + 1}`);
         if (!bone) return;
         const local = hinge.clone().applyQuaternion(bone.getWorldQuaternion(new THREE.Quaternion()).invert());
@@ -218,7 +218,7 @@ export function reach(rig: DriverRig, side: Side, wrist: THREE.Vector3, fingers:
   D.normalize();
   const along = (upper * upper - fore * fore + dist * dist) / (2 * dist);
   const out = Math.sqrt(Math.max(upper * upper - along * along, 0));
-  POLE.set(side === "Left" ? 0.55 : -0.55, -1, -0.25).applyQuaternion(ROOTQ);
+  POLE.set(side === "Left" ? 0.32 : -0.32, -1, -0.3).applyQuaternion(ROOTQ);
   POLE.addScaledVector(D, -POLE.dot(D)).normalize();
   E.copy(S).addScaledVector(D, along).addScaledVector(POLE, out);
   aim(upperArm, foreArm, A.clone().copy(E).sub(S));

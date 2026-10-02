@@ -19,8 +19,8 @@ export const EYE = new THREE.Vector3(0.31, 0.98, -0.05);
 const WHEEL_POS = new THREE.Vector3(0.3, 0.73, 0.29);
 const WHEEL_TILT = 0.5;
 const RIM = 0.14;
-/** Hands hold the rim at 10 and 2 o'clock: this far round from 9 and 3 (radians). */
-const GRIP_ANGLE = 0.61;
+/** Hands hold the rim just above 9 and 3 o'clock: this far round from them (radians). */
+const GRIP_ANGLE = 0.28;
 /** Shifter on the centre console, far enough forward to be in shot. */
 const LEVER_LEN = 0.16;
 const LEVER_PIVOT = new THREE.Vector3(0.06, 0.66, 0.36);
@@ -186,6 +186,7 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
     () => ({
       pos: new THREE.Vector3(),
       radial: new THREE.Vector3(),
+      tangent: new THREE.Vector3(),
       axis: new THREE.Vector3(),
       wrist: new THREE.Vector3(),
       palm: new THREE.Vector3(),
@@ -230,8 +231,12 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
         // The anchor's x axis runs along the wheel's radius (outward on the left, inward on the right), z along the column.
         tmp.radial.set(side === "Left" ? 1 : -1, 0, 0).applyQuaternion(tmp.q);
         tmp.axis.set(0, 0, 1).applyQuaternion(tmp.q);
+        tmp.tangent.set(0, 1, 0).applyQuaternion(tmp.q);
+        // A relaxed grip, not a clamp: the fingers angle in over the rim and slightly upward, the palm turns
+        // a little toward the driver, and the wrist drops below the rim rather than sitting square behind it.
+        tmp.palm.copy(tmp.radial).multiplyScalar(-0.85).addScaledVector(tmp.axis, -0.3).normalize();
+        tmp.axis.multiplyScalar(0.85).addScaledVector(tmp.radial, -0.3).addScaledVector(tmp.tangent, 0.3).normalize();
         tmp.wrist.copy(tmp.pos).addScaledVector(tmp.radial, PALM).addScaledVector(tmp.axis, -WRIST);
-        tmp.palm.copy(tmp.radial).negate();
         if (side === "Right" && e > 0) {
           r.getWorldQuaternion(tmp.q);
           lever.current.localToWorld(tmp.knob.set(0, LEVER_LEN + 0.01, 0));

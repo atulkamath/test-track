@@ -42,13 +42,13 @@ describe("determinism", () => {
   // Golden values: if these change, sim behaviour changed and every stored run is invalidated.
   // Update deliberately, never to "make the test pass".
   it("golden: scripted run", () => {
-    expect(replay({ version: 8, seed: "golden", inputs: scriptedInputs(1200) }).hash).toBe("cf948556");
+    expect(replay({ version: 8, seed: "golden", inputs: scriptedInputs(1200) }).hash).toBe("802e4c8b");
   });
 
   it("golden: autopilot lap", () => {
     const run = autopilotRun("golden");
     const result = replay(run);
-    expect({ lapTicks: result.lapTicks, hash: result.hash }).toEqual({ lapTicks: 5677, hash: "743a6afa" });
+    expect({ lapTicks: result.lapTicks, hash: result.hash }).toEqual({ lapTicks: 6000, hash: "060dadd0" });
   });
 });
 

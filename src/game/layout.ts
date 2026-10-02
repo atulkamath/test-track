@@ -6,6 +6,7 @@ import { buildStreetLayout } from "./streetLayout";
 export const KERB = 1.2;
 
 export type BoxKind =
+  | "streetlamp"
   | "crowd"
   | "concrete"
   | "roof"
@@ -84,6 +85,8 @@ export interface Layout {
   trees?: TreeSpot[];
   /** Tunnel sections: runs of track samples roofed over. */
   tunnels?: { from: number; to: number }[];
+  /** Street lamp heads: where the light comes from after dark. */
+  lamps?: { x: number; y: number; z: number }[];
   /** Water channels beside the track: the near and far bank as matching runs of points. */
   canals?: { near: { x: number; z: number }[]; far: { x: number; z: number }[] }[];
   boxes: Box[];

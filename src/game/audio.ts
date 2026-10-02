@@ -1,6 +1,6 @@
 // Procedural sound, all synthesized with Web Audio (no audio files):
 // a four-stroke engine model for the player and for each AI car (with distance, panning and Doppler so you
-// hear them go past), tyre scrub and squeal, brake rumble, tunnel echo, wind, gear-change clunk and crowd.
+// hear them go past), tyre scrub and squeal, brake rumble, impacts, tunnel echo, wind, gear-change clunk and crowd.
 // Created on the first key press, because browsers only allow audio after a user gesture.
 
 export interface OtherCar {
@@ -351,6 +351,55 @@ export class Sound {
       this.noise.connect(lp).connect(g).connect(this.master);
       setTimeout(() => lp.disconnect(), (when - ctx.currentTime) * 1000 + 200);
       when += 0.05 + Math.random() * 0.09;
+    }
+  }
+
+  /**
+   * Hitting something. A wall is a dull thump followed by a second of scraping; another car is a sharper crunch
+   * of sheet metal with a couple of rattles after it. `strength` 0..1 is how hard (a tap to a full-speed shunt).
+   */
+  impact(kind: "car" | "wall", strength: number) {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const level = 0.3 + 0.7 * strength;
+    const burst = (type: BiquadFilterType, freq: number, q: number, gain: number, at: number, decay: number) => {
+      const f = ctx.createBiquadFilter();
+      f.type = type;
+      f.frequency.value = freq;
+      f.Q.value = q;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, at);
+      g.gain.linearRampToValueAtTime(gain * level, at + 0.004);
+      g.gain.exponentialRampToValueAtTime(0.001, at + decay);
+      this.noise.connect(f).connect(g).connect(this.master);
+      setTimeout(() => f.disconnect(), (at - t + decay) * 1000 + 200);
+    };
+    // The body blow: a sine dropping in pitch, heavier for a wall.
+    const thud = ctx.createOscillator();
+    thud.frequency.setValueAtTime(kind === "wall" ? 95 : 130, t);
+    thud.frequency.exponentialRampToValueAtTime(42, t + 0.16);
+    const thudGain = ctx.createGain();
+    thudGain.gain.setValueAtTime(0, t);
+    thudGain.gain.linearRampToValueAtTime((kind === "wall" ? 0.9 : 0.6) * level, t + 0.005);
+    thudGain.gain.exponentialRampToValueAtTime(0.001, t + 0.24);
+    thud.connect(thudGain).connect(this.master);
+    thud.start(t);
+    thud.stop(t + 0.3);
+    if (kind === "wall") {
+      burst("lowpass", 800, 0.7, 0.8, t, 0.16);
+      // Bodywork grinding along the barrier.
+      burst("bandpass", 1300, 0.8, 0.22 + 0.2 * strength, t + 0.03, 0.35 + 0.5 * strength);
+    } else {
+      burst("lowpass", 2400, 0.7, 0.55, t, 0.1);
+      // Sheet metal: a few ringing bands, then loose trim rattling.
+      for (const [freq, gain] of [
+        [640, 0.9],
+        [1750, 0.7],
+        [3100, 0.45],
+      ]) burst("bandpass", freq, 9, gain, t, 0.2 + 0.15 * strength);
+      burst("bandpass", 2300, 5, 0.3, t + 0.07, 0.07);
+      burst("bandpass", 1500, 5, 0.22, t + 0.15, 0.08);
     }
   }
 

@@ -41,6 +41,9 @@ function useMaterials() {
       m[`ad${i}`].userData.glow = [0.2, 0.8];
     });
     m.lamp.userData.glow = [4, 7];
+    // Street lamps: off in the evening light, bright after dark.
+    m.streetlamp = new THREE.MeshStandardMaterial({ color: "#f3ead6", emissive: "#ffd9a0", emissiveIntensity: 0.1 });
+    m.streetlamp.userData.glow = [0.1, 9];
     return m;
   }, []);
 }

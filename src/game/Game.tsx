@@ -23,7 +23,7 @@ import { Tacho, type TachoHandle } from "./Tacho";
 import { Pylons, Ridges, Town } from "./Background";
 import { CarPark, CircuitBoxes, FerrisWheel, Flags, GravelTraps, Tents, TimingTower } from "./Circuit";
 import { buildLayout, type Layout } from "./layout";
-import { Canals, Models, Pavements, Petals } from "./Street";
+import { Canals, Models, Pavements, Petals, StreetLights } from "./Street";
 import { makeHeight } from "./terrain";
 import { Billboards } from "./Trackside";
 import styles from "./game.module.css";
@@ -278,6 +278,7 @@ function Driver({
   // For the sound of the other cars: a gearbox each (so their engines rev believably) and last frame's gaps.
   const botGears = useMemo(() => engine.sim.state.bots.map(() => new Gearbox()), [engine]);
   const lastGaps = useRef<number[]>([]);
+  const lastVel = useRef({ vx: 0, vz: 0, cool: 0 });
   const headlights = useMemo(() => makeHeadlights(), []);
 
   useFrame(({ camera }, delta) => {
@@ -328,6 +329,19 @@ function Driver({
       for (const f of layout.people) if ((f.x - p.x) ** 2 + (f.z - p.z) ** 2 < 90 * 90) near++;
       cn.level = Math.min(1, near / 350);
     }
+    // Impacts: nothing in normal driving changes the car's velocity by more than a fraction of a metre per
+    // second in one frame, so a jump means it hit something. Another car close by = metal on metal; otherwise a wall.
+    const hit = lastVel.current;
+    const jolt = Math.hypot(sim.vx - hit.vx, sim.vz - hit.vz);
+    hit.cool -= delta;
+    if (started.current && jolt > 2 && hit.cool <= 0) {
+      const car = engine.sim.state.bots.some((b) => (b.x - sim.x) ** 2 + (b.z - sim.z) ** 2 < 4.8 * 4.8);
+      sound.current?.impact(car ? "car" : "wall", Math.min(1, jolt / 12));
+      hit.cool = 0.22;
+    }
+    hit.vx = sim.vx;
+    hit.vz = sim.vz;
+
     const slip = Math.abs(sim.vx * COS[sim.heading] - sim.vz * SIN[sim.heading]);
     const others = hearOtherCars(engine, botGears, lastGaps.current, p, delta);
     sound.current?.update({
@@ -405,6 +419,7 @@ function World({ track, layout }: { track: Track; layout: Layout }) {
             <Models layout={layout} />
           </Suspense>
           <Petals />
+          {layout.lamps && <StreetLights lamps={layout.lamps} />}
         </>
       ) : (
         <>

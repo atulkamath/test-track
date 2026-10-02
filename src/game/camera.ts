@@ -28,10 +28,10 @@ interface Follow {
 // frame and the view catches up. Speed is sold by the lens widening and the camera easing back slightly, plus a
 // small spring: it drops back under hard acceleration and closes in under braking.
 const FOLLOW: Record<Exclude<View, "TV" | "Cockpit">, Follow> = {
-  Chase: { back: 5.2, backSpeed: 1.6, up: 1.65, upSpeed: -0.22, ahead: 6, lookY: 1.05, yawRate: 5.5, fov: 58, fovSpeed: 24 },
-  "Far chase": { back: 9.5, backSpeed: 2.4, up: 3.6, upSpeed: -0.4, ahead: 6, lookY: 1, yawRate: 4, fov: 56, fovSpeed: 20 },
-  Roof: { back: -0.3, backSpeed: 0, up: 2.05, upSpeed: 0, ahead: 20, lookY: 1.4, yawRate: 60, fov: 70, fovSpeed: 14 },
-  Bumper: { back: -2.05, backSpeed: 0, up: 0.7, upSpeed: 0, ahead: 20, lookY: 0.9, yawRate: 80, fov: 74, fovSpeed: 14 },
+  Chase: { back: 5.2, backSpeed: 1.9, up: 1.65, upSpeed: -0.27, ahead: 6, lookY: 1.05, yawRate: 5.5, fov: 58, fovSpeed: 31 },
+  "Far chase": { back: 9.5, backSpeed: 2.4, up: 3.6, upSpeed: -0.4, ahead: 6, lookY: 1, yawRate: 4, fov: 56, fovSpeed: 26 },
+  Roof: { back: -0.3, backSpeed: 0, up: 2.05, upSpeed: 0, ahead: 20, lookY: 1.4, yawRate: 60, fov: 70, fovSpeed: 19 },
+  Bumper: { back: -2.05, backSpeed: 0, up: 0.7, upSpeed: 0, ahead: 20, lookY: 0.9, yawRate: 80, fov: 74, fovSpeed: 19 },
 };
 
 export class CameraRig {
@@ -96,7 +96,7 @@ export class CameraRig {
       // Looking straight ahead and ~8° down: the top half of the screen is windscreen, the lower half the
       // dash, dials and wheel.
       camera.lookAt(carRoot.localToWorld(this.target.set(eye.x, eye.y - 1.7, eye.z + 12)));
-      fov = 62 + speedFrac * 5;
+      fov = 62 + speedFrac * 10;
     } else if (view === "TV" && this.tvSpots.length > 0) {
       // Pick the nearest trackside camera, switching only when another is clearly closer (like a TV director).
       let best = 0;
