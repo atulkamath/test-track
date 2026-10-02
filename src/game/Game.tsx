@@ -1,6 +1,6 @@
 "use client";
 
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Environment } from "@react-three/drei";
 import { Bloom, EffectComposer, HueSaturation, N8AO, SMAA, ToneMapping, Vignette } from "@react-three/postprocessing";
 import { ToneMappingMode } from "postprocessing";
@@ -247,7 +247,7 @@ function Driver({
         intensity={4.6}
         color="#fff1dc"
         castShadow
-        shadow-mapSize={[4096, 4096]}
+        shadow-mapSize={[2048, 2048]}
         shadow-camera-left={-80}
         shadow-camera-right={80}
         shadow-camera-top={80}
@@ -343,6 +343,24 @@ function Effects({ ao }: { ao: boolean }) {
       <SMAA />
     </EffectComposer>
   );
+}
+
+/** Draw at most 60 frames a second: on a 120 Hz display the uncapped loop doubles the GPU work for no gain here. */
+function FrameCap() {
+  const invalidate = useThree((s) => s.invalidate);
+  useEffect(() => {
+    let raf = 0;
+    let last = 0;
+    const tick = (now: number) => {
+      raf = requestAnimationFrame(tick);
+      if (now - last < 1000 / 60 - 2) return;
+      last = now;
+      invalidate();
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [invalidate]);
+  return null;
 }
 
 export default function Game() {
@@ -471,7 +489,9 @@ export default function Game() {
     <div className={styles.root}>
       <Canvas
         shadows="percentage"
-        dpr={[1, 2]}
+        // Capped below full Retina: every post-processing pass is paid per pixel.
+        dpr={[1, 1.5]}
+        frameloop="demand"
         gl={{ antialias: false, powerPreference: "high-performance" }}
         camera={{ fov: 58, near: 0.1, far: 3200 }}
       >
@@ -483,6 +503,7 @@ export default function Game() {
         <Crowd people={layout.people} engine={engine} />
         <Helicopter engine={engine} />
         <BigScreen layout={layout} engine={engine} />
+        <FrameCap />
         <Effects ao={VIEWS[viewIdx] !== "Cockpit"} />
       </Canvas>
 
