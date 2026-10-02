@@ -10,7 +10,6 @@
 // well forward of the headrest so the low roof stays out of shot, and the wheel is small and low enough that
 // the dials show between its hub and rim.
 import { useGLTF } from "@react-three/drei";
-import { useFrame } from "@react-three/fiber";
 import { forwardRef, useImperativeHandle, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { bonePosition, createDriver, DRIVER_SCALE, DRIVER_URL, reach, type DriverRig } from "./driverRig";
@@ -35,69 +34,6 @@ export interface CockpitHandle {
   update(frame: { steer: number; gear: number; speedKmh: number; rpm: number; delta: number }): void;
   /** Fire the airbag (a big crash). Returns false if it is already out. */
   airbag(): boolean;
-}
-
-// Left door mirror: a small pod at the foot of the windscreen pillar, where the driver can actually see it,
-// showing a live view down the left side of the car (the scene drawn a second time from the mirror, small).
-const MIRROR_POS = new THREE.Vector3(0.69, 0.835, 0.47);
-const MIRROR_SIZE: [number, number] = [0.17, 0.09];
-/** The glass is turned in toward the driver. */
-const MIRROR_YAW = Math.PI + 0.42;
-/** Which way the reflected view looks, in the car's frame: back, a little out to the left and down. */
-const MIRROR_LOOK = new THREE.Vector3(0.2, -0.07, -1);
-const MIRROR_PIXELS: [number, number] = [384, 200];
-
-function isShown(o: THREE.Object3D | null): boolean {
-  for (let p = o; p; p = p.parent) if (!p.visible) return false;
-  return o !== null;
-}
-
-/** Draw the scene from the mirror into its texture. The glass itself is hidden meanwhile (it can't show itself). */
-function renderMirror(gl: THREE.WebGLRenderer, scene: THREE.Scene, glass: THREE.Mesh, camera: THREE.PerspectiveCamera, target: THREE.WebGLRenderTarget) {
-  const car = glass.parent!;
-  car.updateWorldMatrix(true, false);
-  camera.position.copy(MIRROR_POS).add(new THREE.Vector3(0.12, 0.03, -0.1));
-  car.localToWorld(camera.position);
-  camera.lookAt(car.localToWorld(MIRROR_POS.clone().addScaledVector(MIRROR_LOOK, 30)));
-  camera.updateMatrixWorld();
-  const shadows = gl.shadowMap.autoUpdate;
-  gl.shadowMap.autoUpdate = false; // reuse this frame's shadows
-  glass.visible = false;
-  gl.setRenderTarget(target);
-  gl.clear();
-  gl.render(scene, camera);
-  gl.setRenderTarget(null);
-  glass.visible = true;
-  gl.shadowMap.autoUpdate = shadows;
-}
-
-function Mirror() {
-  const glass = useRef<THREE.Mesh>(null);
-  const { target, camera } = useMemo(() => {
-    const target = new THREE.WebGLRenderTarget(MIRROR_PIXELS[0], MIRROR_PIXELS[1], { type: THREE.HalfFloatType });
-    const camera = new THREE.PerspectiveCamera(24, MIRROR_SIZE[0] / MIRROR_SIZE[1], 0.3, 1500);
-    return { target, camera };
-  }, []);
-  const tick = useRef(0);
-  useFrame(({ gl, scene }) => {
-    // Only while the driver's view is showing, and every other frame: it is a small picture.
-    if (!glass.current || !isShown(glass.current) || tick.current++ % 2) return;
-    renderMirror(gl, scene, glass.current, camera, target);
-  });
-  return (
-    <group position={MIRROR_POS} rotation={[0, MIRROR_YAW, 0]}>
-      {/* Housing behind the glass */}
-      <mesh position={[0, 0, -0.03]}>
-        <boxGeometry args={[MIRROR_SIZE[0] + 0.02, MIRROR_SIZE[1] + 0.02, 0.05]} />
-        <meshStandardMaterial color="#15171a" roughness={0.5} />
-      </mesh>
-      {/* A mirror shows left and right swapped: flip the picture. */}
-      <mesh ref={glass} scale={[-1, 1, 1]}>
-        <planeGeometry args={MIRROR_SIZE} />
-        <meshBasicMaterial map={target.texture} side={THREE.DoubleSide} />
-      </mesh>
-    </group>
-  );
 }
 
 /** What the airbag says when it goes off. */
@@ -457,8 +393,6 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
           <object3D ref={anchorR} position={[-RIM * Math.cos(GRIP_ANGLE), RIM * Math.sin(GRIP_ANGLE), 0]} rotation={[0, 0, -GRIP_ANGLE]} />
         </group>
       </group>
-
-      <Mirror />
 
       {/* Airbag: a pillow bursting out of the wheel hub, with a few words on it */}
       <group ref={bag} position={[WHEEL_POS.x, WHEEL_POS.y + 0.09, WHEEL_POS.z - 0.07]} visible={false}>
