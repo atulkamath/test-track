@@ -27,12 +27,76 @@ const LEVER_PIVOT = new THREE.Vector3(0.06, 0.66, 0.36);
 /** How long the hand spends reaching for the lever and back (seconds). */
 const SHIFT_TIME = 0.65;
 /** How far the palm sits off the rim or knob, and how far the wrist is behind the palm. */
+const DOWN = new THREE.Vector3(0, -1, 0);
 const PALM = 0.03;
 const WRIST = 0.085;
 
 export interface CockpitHandle {
   update(frame: { steer: number; gear: number; speedKmh: number; rpm: number; delta: number }): void;
+  /** Fire the airbag (a big crash). */
+  airbag(): void;
+  /** Put the airbag away (race restarted). */
+  reset(): void;
 }
+
+/**
+ * The airbag's fabric, wrapped once round the bag: off-white woven cloth, a stitched circular seam with
+ * radial seams running out from it, and the maker's words printed across the face the driver sees.
+ * (On the sphere that face is at 3/4 of the way round, half-way up.)
+ */
+function airbagFabric() {
+  const { canvas, texture } = canvasTexture(1024, 512);
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "#e9e6dd";
+  ctx.fillRect(0, 0, 1024, 512);
+  // Weave: fine speckle, fixed pattern.
+  let seed = 7;
+  const rnd = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
+  for (let i = 0; i < 9000; i++) {
+    ctx.fillStyle = rnd() < 0.5 ? "rgba(255,255,255,0.35)" : "rgba(120,112,95,0.12)";
+    ctx.fillRect(rnd() * 1024, rnd() * 512, 2, 1);
+  }
+  const cx = 768;
+  const cy = 256;
+  // Seams: a stitched ring round the face, and seams running out from it.
+  ctx.strokeStyle = "rgba(95, 88, 72, 0.55)";
+  ctx.lineWidth = 3;
+  ctx.setLineDash([9, 7]);
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, 190, 205, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  for (let k = 0; k < 8; k++) {
+    const a = (k / 8) * Math.PI * 2 + 0.2;
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(a) * 190, cy + Math.sin(a) * 205);
+    ctx.lineTo(cx + Math.cos(a) * 330, cy + Math.sin(a) * 330);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  // Soft shading so the face reads as a rounded cushion.
+  const shade = ctx.createRadialGradient(cx - 40, cy - 60, 20, cx, cy, 300);
+  shade.addColorStop(0, "rgba(255,255,255,0.45)");
+  shade.addColorStop(1, "rgba(110,100,80,0.22)");
+  ctx.fillStyle = shade;
+  ctx.fillRect(512, 0, 512, 512);
+  ctx.fillStyle = "#23252b";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = "italic 25px sans-serif";
+  ctx.fillText("Engineered by", cx, cy - 30);
+  ctx.font = "bold 34px sans-serif";
+  ctx.fillText("Richard Hammond", cx, cy + 10);
+  texture.needsUpdate = true;
+  return texture;
+}
+
+/** Seconds: bang out of the wheel, stay up, then sag away. */
+const BAG_OUT = 0.08;
+const BAG_HOLD = 6;
+const BAG_GONE = 8.5;
+/** Fully out, the bag sits between the wheel and the driver's face and fills most of the view. */
+const BAG_AT = new THREE.Vector3(0.305, 0.91, 0.265);
+const BAG_RADIUS = 0.135;
 
 /** Maker's badge for the dashboard: pale lettering, like a plate fixed to the passenger side. */
 function badgeTexture() {
@@ -204,6 +268,9 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
   }, []);
   const state = useRef({ gear: 1, steer: 0, shiftT: 1, lastDash: "", leverFrom: [0, 0] as [number, number] });
   const badge = useMemo(() => badgeTexture(), []);
+  const bag = useRef<THREE.Mesh>(null);
+  const fabric = useMemo(() => airbagFabric(), []);
+  const bagT = useRef(-1);
   const tmp = useMemo(
     () => ({
       pos: new THREE.Vector3(),
@@ -272,11 +339,33 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
         reach(driver, side, tmp.wrist, tmp.axis, tmp.palm);
       }
 
+      // Airbag: bursts from the wheel hub toward the driver in a blink, wobbles, holds, then sags down and shrinks.
+      if (bag.current) {
+        if (bagT.current >= 0) bagT.current += delta;
+        if (bagT.current > BAG_GONE) bagT.current = -1;
+        const t = bagT.current;
+        const out = t < 0 ? 0 : Math.min(t / BAG_OUT, 1);
+        const sag = t < BAG_HOLD ? 0 : THREE.MathUtils.smoothstep(t, BAG_HOLD, BAG_GONE);
+        bag.current.visible = t >= 0;
+        bag.current.position.lerpVectors(WHEEL_POS, BAG_AT, out).addScaledVector(DOWN, sag * 0.16);
+        const wobble = 1 + 0.07 * Math.sin(t * 38) * Math.exp(-t * 5);
+        const full = Math.max(out, 0.02) * wobble;
+        // Deflating, it loses height faster than width, like a bag going slack.
+        bag.current.scale.set(full * (1 - 0.45 * sag), full * (1 - 0.8 * sag), full * 0.55 * (1 - 0.6 * sag));
+      }
+
       const key = `${gear}|${Math.round(speedKmh / 2)}|${Math.round(rpm / 100)}`;
       if (key !== s.lastDash) {
         drawCluster(cluster.canvas, cluster.texture, gear, speedKmh, rpm);
         s.lastDash = key;
       }
+    },
+    airbag() {
+      if (bagT.current < 0) bagT.current = 0;
+    },
+    reset() {
+      bagT.current = -1;
+      if (bag.current) bag.current.visible = false;
     },
   }));
 
@@ -370,6 +459,12 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
           <object3D ref={anchorR} position={[-RIM * Math.cos(GRIP_ANGLE), RIM * Math.sin(GRIP_ANGLE), 0]} rotation={[0, 0, -GRIP_ANGLE]} />
         </group>
       </group>
+
+      {/* Airbag (hidden until a big crash) */}
+      <mesh ref={bag} visible={false}>
+        <sphereGeometry args={[BAG_RADIUS, 40, 28]} />
+        <meshStandardMaterial map={fabric} roughness={0.95} emissive="#ffffff" emissiveMap={fabric} emissiveIntensity={0.25} />
+      </mesh>
 
       {/* The driver's own body: suited arms and gloved hands (head left out, the camera is inside it) */}
       <primitive object={driver.root} />

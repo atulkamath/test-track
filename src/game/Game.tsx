@@ -290,6 +290,7 @@ function Driver({
   const headlights = useMemo(() => makeHeadlights(), []);
 
   useFrame(({ camera }, delta) => {
+    if (!crashed.current) cockpit.current?.reset();
     // After the airbag has gone off the engine is dead: the car brakes to a stop and takes no more input.
     if (started.current) engine.advance(delta, () => (crashed.current ? (engine.sim.state.car.speed > 0.5 ? DOWN : 0) : input.current));
     onTick();
@@ -349,6 +350,7 @@ function Driver({
       // Easter egg: a crash from 160 km/h or more, seen from the driver's seat, sets off the airbag.
       if (viewName === "Cockpit" && Math.hypot(hit.vx, hit.vz) * 3.6 >= 160 && !crashed.current) {
         sound.current?.airbag();
+        cockpit.current?.airbag();
         onCrash();
       }
       hit.cool = 0.22;
@@ -709,10 +711,6 @@ export default function Game() {
       {!started && lapTicks === null && <div className={styles.byline}>Game by Atul K</div>}
       {airbag && (
         <div className={styles.airbagWrap}>
-          <div className={styles.airbag}>
-            <span>Engineered by</span>
-            <strong>Richard Hammond</strong>
-          </div>
           <div className={styles.airbagPrompt}>
             Engine dead · <button onClick={restart}>Press R to restart</button>
           </div>
