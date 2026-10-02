@@ -131,9 +131,9 @@ export interface SkidHandle {
 }
 
 const SKID_CAPACITY = 2400;
-const SMOKE_CAPACITY = 700;
+const SMOKE_CAPACITY = 320;
 /** Seconds a puff of tyre smoke lasts. */
-const SMOKE_LIFE = 2.6;
+const SMOKE_LIFE = 2;
 
 /**
  * Tyre smoke: each particle is a point with a birth time and a random seed; the shader does the rest. A puff
@@ -175,7 +175,7 @@ function makeSmoke() {
         p.z += age * (0.35 + fract(aSeed * 7.3) * 0.4);
         vec4 mv = viewMatrix * vec4(p, 1.0);
         gl_Position = projectionMatrix * mv;
-        float size = 0.45 + 2.6 * (1.0 - exp(-age * 1.8)) + age * 0.5;
+        float size = 0.45 + 1.7 * (1.0 - exp(-age * 1.8)) + age * 0.4;
         gl_PointSize = alive ? size * (0.8 + aSeed * 0.4) * 520.0 / max(-mv.z, 0.5) : 0.0;
       }`,
     fragmentShader: /* glsl */ `
@@ -240,7 +240,7 @@ export const SkidMarks = forwardRef<SkidHandle>(function SkidMarks(_, ref) {
       const m = mesh.current;
       if (!m) return;
       const side = car.vx * COS[car.heading] - car.vz * SIN[car.heading];
-      const sliding = !car.offRoad && (Math.abs(side) > 3.2 || (braking && car.speed > 22));
+      const sliding = !car.offRoad && (Math.abs(side) > 3.2 || car.slide > 0.55 || (braking && car.speed > 22));
       if (!sliding) {
         last.current.set(key, null);
         return;
@@ -250,7 +250,7 @@ export const SkidMarks = forwardRef<SkidHandle>(function SkidMarks(_, ref) {
       // Rear wheels: 1 m behind centre, 0.45 m either side.
       const wheels: [number, number][] = [-1, 1].map((s) => [x - fx * 1 + fz * 0.45 * s, z - fz * 1 - fx * 0.45 * s]);
       // A puff from each rear tyre every few frames while it's sliding.
-      if (puffClock.current++ % 2 === 0) for (const [wx, wz] of wheels) smoke.emit(wx, wz);
+      if (puffClock.current++ % 3 === 0) for (const [wx, wz] of wheels) smoke.emit(wx, wz);
       const prev = last.current.get(key);
       if (prev) {
         wheels.forEach(([wx, wz], w) => {

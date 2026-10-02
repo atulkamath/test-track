@@ -230,85 +230,6 @@ function setLeafTime(t: number) {
   LEAF_TIME.value = t;
 }
 
-/**
- * Shafts of sunlight coming down through the canopy of the trees a map has planted. Each is a pair of crossed,
- * see-through sheets running from the crown to the ground along the sun's direction, brightest in the middle and
- * faintly shimmering: drawn in the world, so nothing is done to the finished picture.
- */
-export function SunShafts({ spots }: { spots: TreeSpot[] }) {
-  const { geometry, material } = useMemo(() => {
-    const down = SUN_DIR.clone().negate();
-    const w1 = new THREE.Vector3().crossVectors(down, new THREE.Vector3(0, 1, 0)).normalize();
-    const w2 = new THREE.Vector3().crossVectors(down, w1).normalize();
-    const pos: number[] = [];
-    const uv: number[] = [];
-    const phase: number[] = [];
-    spots.forEach((t, i) => {
-      if (i % 2) return;
-      const topY = t.height * 0.72;
-      // Start a little off-centre in the crown, so the shafts of a row of trees don't line up.
-      const top = new THREE.Vector3(t.x + Math.sin(i * 2.4) * 1.2, topY, t.z + Math.cos(i * 1.7) * 1.2);
-      const foot = top.clone().addScaledVector(down, topY / SUN_DIR.y);
-      const half = 0.7 + (i % 5) * 0.16;
-      for (const w of [w1, w2]) {
-        const corners = [
-          [top.clone().addScaledVector(w, -half), 0, 0],
-          [top.clone().addScaledVector(w, half), 1, 0],
-          [foot.clone().addScaledVector(w, -half * 1.5), 0, 1],
-          [foot.clone().addScaledVector(w, half * 1.5), 1, 1],
-        ] as const;
-        for (const k of [0, 2, 1, 1, 2, 3]) {
-          const [v, u, vv] = corners[k];
-          pos.push(v.x, v.y, v.z);
-          uv.push(u, vv);
-          phase.push(i * 0.37);
-        }
-      }
-    });
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
-    geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
-    geometry.setAttribute("aPhase", new THREE.Float32BufferAttribute(phase, 1));
-    const material = new THREE.ShaderMaterial({
-      uniforms: { uTime: LEAF_TIME },
-      transparent: true,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-      blending: THREE.AdditiveBlending,
-      vertexShader: /* glsl */ `
-        attribute float aPhase;
-        varying vec2 vUv;
-        varying float vPhase;
-        varying float vDist;
-        void main() {
-          vUv = uv;
-          vPhase = aPhase;
-          vec4 mv = viewMatrix * vec4(position, 1.0);
-          vDist = -mv.z;
-          gl_Position = projectionMatrix * mv;
-        }`,
-      fragmentShader: /* glsl */ `
-        uniform float uTime;
-        varying vec2 vUv;
-        varying float vPhase;
-        varying float vDist;
-        void main() {
-          // Soft across the width, with a few brighter streaks; fades in below the crown and out at the ground.
-          float across = 1.0 - abs(vUv.x - 0.5) * 2.0;
-          float streaks = 0.65 + 0.35 * sin(vUv.x * 19.0 + vPhase * 9.0);
-          float along = smoothstep(0.0, 0.25, vUv.y) * (1.0 - smoothstep(0.75, 1.0, vUv.y));
-          float shimmer = 0.8 + 0.2 * sin(uTime * 0.9 + vPhase * 13.0 + vUv.x * 5.0);
-          // Gone when the camera is right inside one, and in the far distance.
-          float range = smoothstep(2.0, 9.0, vDist) * (1.0 - smoothstep(90.0, 160.0, vDist));
-          float a = across * across * streaks * along * shimmer * range * 0.085;
-          gl_FragColor = vec4(vec3(1.0, 0.93, 0.76) * a, a);
-        }`,
-    });
-    return { geometry, material };
-  }, [spots]);
-  return <mesh geometry={geometry} material={material} frustumCulled={false} />;
-}
-
 export function Trees({
   track,
   reserved,
@@ -423,7 +344,7 @@ export function Trees({
       const m = new THREE.Matrix4().compose(new THREE.Vector3(x, height(x, z) - 0.15, z), q, new THREE.Vector3(s, s * (0.9 + rand() * 0.2), s));
       // Autumn colour comes in patches, like a stand of maples turning together.
       const patch = Math.sin(x * 0.011 + 2.3) * Math.sin(z * 0.013 + 0.9);
-      (blossomWoods ? (patch > -0.1 ? lists[k].sakura : lists[k].green) : patch > 0.45 ? lists[k].autumn : lists[k].green).push(m);
+      (blossomWoods ? lists[k].sakura : patch > 0.45 ? lists[k].autumn : lists[k].green).push(m);
       count++;
     }
     // The map's own trees: exact spot and height, a different shape each time.

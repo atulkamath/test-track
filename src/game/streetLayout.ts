@@ -148,14 +148,14 @@ export function buildStreetLayout(track: Track): Layout {
       if (seg % 2 === 1) model("stonelamp", f, outer * (wall + 1.5), 0, 0, 0, 2.3);
       standingCrowd(f, outer, wall + 0.7, 1.6, segLen, 4);
       tree(f, outer * (wall + 22 + rand() * 3), (rand() - 0.5) * 4, 9 + rand() * 4);
-      if (seg % 2 === 0) tree(f, outer * (wall + 30 + rand() * 6), 0, 10 + rand() * 4, rand() < 0.7 ? "sakura" : "green");
+      if (seg % 2 === 0) tree(f, outer * (wall + 30 + rand() * 6), 0, 10 + rand() * 4);
       keepClear(f, outer * (wall + 12), 14);
     } else if (zone === "tunnel") {
       // Walls, roof slab, a strip light, and the hill over the top.
       for (const s of [1, -1]) {
         add(f, s * (wall + 0.35), 2.9, 0.7, 5.8, segLen + 0.05, "concrete");
         add(f, s * (wall + 6.5), 3.6, 11.5, 7.2, segLen + 0.05, "berm");
-        if (seg % 2 === 0) tree(f, s * (wall + 6 + rand() * 4), 0, 7 + rand() * 3, "green");
+        if (seg % 2 === 0) tree(f, s * (wall + 6 + rand() * 4), 0, 7 + rand() * 3);
       }
       add(f, 0, 6.05, (wall + 0.7) * 2, 0.5, segLen + 0.05, "concrete");
       add(f, 0, 5.74, 0.5, 0.1, 2.4, "lamp");
@@ -195,15 +195,15 @@ export function buildStreetLayout(track: Track): Layout {
         if (seg % 3 === 0) standingCrowd(f, s, wall + 0.7, 1.8, segLen, 4);
       }
       if (i - lastTorii > 55) {
-        // Vermilion gate, wide enough for its pillars to stand outside the walls.
-        model("torii", f, 0, 0, 0, Math.atan2(f.tx, f.tz), 13.5, "#e2401f");
+        // Vermilion gate, big enough that its pillars stand outside the walls and the road runs between them.
+        model("torii", f, 0, 0, 0, Math.atan2(f.tx, f.tz), 19, "#e2401f");
         lastTorii = i;
       }
     } else if (zone === "west") {
       // Park: cherry trees both sides, fans on a grass bank on the outside.
       for (const s of [1, -1]) {
         if (seg % 2 === (s > 0 ? 0 : 1)) tree(f, s * (wall + 2.2), 0, 8 + rand() * 3);
-        tree(f, s * (wall + 13 + rand() * 6), (rand() - 0.5) * 4, 9 + rand() * 4, rand() < 0.8 ? "sakura" : "green");
+        tree(f, s * (wall + 13 + rand() * 6), (rand() - 0.5) * 4, 9 + rand() * 4);
       }
       const BERM = 9;
       const RISE = 2.6;

@@ -18,7 +18,7 @@ import { Crowd } from "./Crowd";
 import { BigScreen, Blimp, Helicopter, Lake, Paddock } from "./Life";
 import { Obstacles, SkidMarks, Traffic, type SkidHandle } from "./Dynamic";
 import { Engine, formatTicks, type Pose } from "./engine";
-import { FinishLine, GatePosts, Ground, Road, RunOff, Trees, SunShafts } from "./Scene";
+import { FinishLine, GatePosts, Ground, Road, RunOff, Trees } from "./Scene";
 import { Tacho, type TachoHandle } from "./Tacho";
 import { Pylons, Ridges, Town } from "./Background";
 import { CarPark, CircuitBoxes, FerrisWheel, Flags, GravelTraps, Tents, TimingTower } from "./Circuit";
@@ -237,7 +237,8 @@ function Driver({
       rpm: started.current ? gears.rpm : 900,
       throttle: started.current && !engine.finished && (input.current & UP) !== 0,
       speed,
-      slip: sim.offRoad ? 0 : slip,
+      // Sideways speed, or how far past the grip limit the tyres are, whichever is louder.
+      slip: sim.offRoad ? 0 : Math.max(slip, sim.slide * 7),
       crowd: cn.level,
       tunnel: layout.tunnels?.some((t) => engine.sim.state.trackIndex[0] >= t.from && engine.sim.state.trackIndex[0] < t.to) ? 1 : 0,
       braking,
@@ -305,7 +306,6 @@ function World({ track, layout }: { track: Track; layout: Layout }) {
             <Models layout={layout} />
           </Suspense>
           <Petals />
-          {layout.trees && <SunShafts spots={layout.trees} />}
         </>
       ) : (
         <>
