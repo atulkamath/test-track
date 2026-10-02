@@ -649,13 +649,10 @@ function Race({ map, onPickMap }: { map: ChosenMap; onPickMap: (id: MapId) => vo
     }
   }, [engine, lapTicks, gears]);
 
-  const download = () => {
-    const blob = new Blob([JSON.stringify(engine.run())], { type: "application/json" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "run.json";
-    a.click();
-    URL.revokeObjectURL(a.href);
+  /** Dev only: jump to the last five seconds of the final lap, to test the finish. */
+  const skipToFinish = () => {
+    begin();
+    engine.skipToFinish(5);
   };
 
   return (
@@ -719,6 +716,12 @@ function Race({ map, onPickMap }: { map: ChosenMap; onPickMap: (id: MapId) => vo
         Off road
       </div>
 
+      {process.env.NODE_ENV !== "production" && lapTicks === null && (
+        <button className={styles.devButton} onClick={skipToFinish}>
+          Dev · last 5 s
+        </button>
+      )}
+
       {/* Start screen: pick a map, then start; the lights count down from there. */}
       {!started && lapTicks === null && (
         <div className={styles.menu}>
@@ -771,7 +774,6 @@ function Race({ map, onPickMap }: { map: ChosenMap; onPickMap: (id: MapId) => vo
           <div className={styles.panelTime}>{formatTicks(lapTicks)}</div>
           <div className={styles.panelTicks}>best lap {result?.bestLap != null ? formatTicks(result.bestLap) : "--.---"}</div>
           <div className={styles.actions}>
-            <button onClick={download}>Download run.json</button>
             <button onClick={restart}>Retry (R)</button>
           </div>
         </div>

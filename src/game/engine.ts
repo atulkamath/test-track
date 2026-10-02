@@ -1,5 +1,5 @@
 // Browser-side glue: turns wall-clock frames into fixed sim ticks and records inputs.
-import { createSim, DT, HEADING_STEPS, MAX_TICKS, RUN_VERSION, step, stepTraffic, type Run, type Sim, type Track } from "@/sim";
+import { createSim, DT, HEADING_STEPS, MAX_TICKS, RUN_VERSION, skipToFinish, step, stepTraffic, type Run, type Sim, type Track } from "@/sim";
 
 /** Length of the start-light sequence (s). Outside the sim: a replay starts at lights out. */
 export const START_DELAY = 3;
@@ -50,6 +50,14 @@ export class Engine {
       }
       this.acc -= DT;
     }
+  }
+
+  /** Testing aid: jump to a few seconds before the end of the final lap, lights already out. */
+  skipToFinish(seconds = 5): void {
+    skipToFinish(this.sim, seconds);
+    this.countdown = 0;
+    this.acc = 0;
+    this.savePrev();
   }
 
   /** Pose blended between the last two ticks, for smooth rendering only. */
