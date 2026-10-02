@@ -1,7 +1,7 @@
 import { autopilotInput, chooseLine, DEFAULT_SKILL, nearestIndex, type Skill } from "./autopilot";
-import { stepCar, type CarState } from "./car";
+import { DT, stepCar, type CarState } from "./car";
 import { collideCars, collideObstacles, collideWalls, type Knock } from "./collide";
-import { DOWN, INPUT_MASK, LEFT, RIGHT, UP } from "./input";
+import { INPUT_MASK, LEFT, RIGHT } from "./input";
 import { hashString } from "./rng";
 import { headingFromVector } from "./trig";
 import { crossesGate, distanceToCentre, generateTrack, type Track } from "./track";
@@ -182,18 +182,27 @@ export function step(sim: Sim, input: number): void {
   }
 }
 
-/** Speeds (m/s) for the player's car after the flag: brake down to the first, then hold about the second. */
-const COOLDOWN_BRAKE = 27;
-const COOLDOWN_CRUISE = 13;
+/** How hard the player's car slows after the flag (m/s^2): from racing speed to a stop in 4-5 seconds. */
+const COOLDOWN_DECEL = 7;
 
 /**
  * Display only, after the player has finished: the AI cars keep racing, and the player's car rolls on over
- * the line on its own, easing down to a gentle cruise round the track. Never part of a replay.
+ * the line on its own, steering itself and slowing gently to a stop. Never part of a replay.
  */
 export function stepTraffic(sim: Sim): void {
   const s = sim.state;
-  const steer = autopilotInput(sim.track, s.car, DEFAULT_SKILL, 0, s.bots) & (LEFT | RIGHT);
-  moveCar(sim, s.car, steer | (s.car.speed > COOLDOWN_BRAKE ? DOWN : s.car.speed < COOLDOWN_CRUISE ? UP : 0));
+  const car = s.car;
+  if (car.speed > 0.3) {
+    moveCar(sim, car, autopilotInput(sim.track, car, DEFAULT_SKILL, 0, s.bots) & (LEFT | RIGHT));
+    const keep = car.speed > COOLDOWN_DECEL * DT ? 1 - (COOLDOWN_DECEL * DT) / car.speed : 0;
+    car.vx *= keep;
+    car.vz *= keep;
+    car.speed *= keep;
+  } else {
+    car.vx = 0;
+    car.vz = 0;
+    car.speed = 0;
+  }
   moveBots(sim);
   collideAll([sim.state.car, ...sim.state.bots]);
   updateProgress(sim);
