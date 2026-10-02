@@ -9,8 +9,10 @@
 // fixed steering wheel is removed by scripts/convert-cars.mjs. Layout was tuned against a screenshot: the eye is
 // well forward of the headrest so the low roof stays out of shot, and the wheel is small and low enough that
 // the dials show between its hub and rim.
+import { useGLTF } from "@react-three/drei";
 import { forwardRef, useImperativeHandle, useMemo, useRef } from "react";
 import * as THREE from "three";
+import { bonePosition, createDriver, DRIVER_SCALE, DRIVER_URL, reach, type DriverRig } from "./driverRig";
 
 export const EYE = new THREE.Vector3(0.31, 0.98, -0.05);
 /** Close enough to the driver that the dials can sit just behind it and still be in front of the model's dash. */
@@ -22,30 +24,26 @@ const GRIP_ANGLE = 0.61;
 /** Shifter on the centre console, far enough forward to be in shot. */
 const LEVER_LEN = 0.16;
 const LEVER_PIVOT = new THREE.Vector3(0.06, 0.66, 0.36);
-const SHOULDER_L = new THREE.Vector3(0.5, 0.8, -0.12);
-const SHOULDER_R = new THREE.Vector3(0.13, 0.8, -0.12);
 /** How long the hand spends reaching for the lever and back (seconds). */
 const SHIFT_TIME = 0.65;
-const SUIT = "#8f1f1a";
-const GLOVE = "#c8322b"; // bright racing gloves read clearly against the dark cabin
+/** How far the palm sits off the rim or knob, and how far the wrist is behind the palm. */
+const PALM = 0.03;
+const WRIST = 0.085;
 
 export interface CockpitHandle {
   update(frame: { steer: number; gear: number; speedKmh: number; rpm: number; delta: number }): void;
 }
 
-const UP = new THREE.Vector3(0, 1, 0);
 
-/** Stretch a unit-length, y-aligned mesh between two points. */
-function span(obj: THREE.Object3D, a: THREE.Vector3, b: THREE.Vector3) {
-  obj.position.copy(a).add(b).multiplyScalar(0.5);
-  const dir = new THREE.Vector3().subVectors(b, a);
-  obj.scale.set(1, dir.length(), 1);
-  obj.quaternion.setFromUnitVectors(UP, dir.normalize());
-}
-
-/** Elbow sits below and outboard of the shoulder-hand midpoint. */
-function elbow(shoulder: THREE.Vector3, hand: THREE.Vector3, out: number, target: THREE.Vector3) {
-  return target.lerpVectors(shoulder, hand, 0.5).add(new THREE.Vector3(out * 0.07, -0.13, -0.02));
+/** Body (not head) of the driver, sized and placed so his eyes are where the camera is. */
+function seatDriver(rig: DriverRig) {
+  rig.root.scale.setScalar(DRIVER_SCALE);
+  rig.root.position.set(0, 0, 0);
+  rig.root.updateMatrixWorld(true);
+  const head = bonePosition(rig, "Head", new THREE.Vector3());
+  // The eyes are a little above and in front of the head joint.
+  rig.root.position.copy(EYE).sub(head).add(new THREE.Vector3(0, -0.07, -0.09));
+  return rig;
 }
 
 function canvasTexture(w: number, h: number) {
@@ -164,65 +162,11 @@ function leverAngles(gear: number): [number, number] {
   return [fwd, gate];
 }
 
-/**
- * A racing glove gripping a bar that runs along local y: four separate fingers wrap the bar, thumb over the top,
- * padded back of the hand with a dark knuckle guard, and a cuff with a white band where it meets the sleeve.
- */
-function Fist() {
-  const red = <meshStandardMaterial color={GLOVE} roughness={0.6} />;
-  const dark = <meshStandardMaterial color="#17181b" roughness={0.85} />;
-  return (
-    <group>
-      {[-0.03, -0.01, 0.01, 0.03].map((y, i) => (
-        <mesh key={y} position={[0, y, 0]} rotation={[Math.PI / 2, 0, Math.PI * 0.15]}>
-          <torusGeometry args={[i === 0 ? 0.027 : 0.03, 0.0096, 8, 16, Math.PI * 1.45]} />
-          {red}
-        </mesh>
-      ))}
-      {/* Back of the hand and knuckle guard */}
-      <mesh position={[0, 0, -0.038]} rotation={[Math.PI / 2, 0, 0]} scale={[1.2, 1, 1.45]}>
-        <capsuleGeometry args={[0.027, 0.03, 6, 14]} />
-        {red}
-      </mesh>
-      <mesh position={[0.012, 0, -0.03]} rotation={[0, 0, 0]}>
-        <boxGeometry args={[0.03, 0.076, 0.014]} />
-        {dark}
-      </mesh>
-      {/* Thumb */}
-      <mesh position={[0, 0.036, -0.012]} rotation={[0.9, 0, 0]}>
-        <capsuleGeometry args={[0.011, 0.035, 4, 8]} />
-        {red}
-      </mesh>
-      {/* Cuff: dark, with a white band */}
-      <mesh position={[0, 0, -0.085]} rotation={[Math.PI / 2, 0, 0]} scale={[1.15, 1, 0.85]}>
-        <cylinderGeometry args={[0.036, 0.04, 0.05, 16]} />
-        {dark}
-      </mesh>
-      <mesh position={[0, 0, -0.066]} rotation={[Math.PI / 2, 0, 0]} scale={[1.15, 1, 0.85]}>
-        <cylinderGeometry args={[0.0375, 0.0375, 0.008, 16]} />
-        <meshStandardMaterial color="#e9ecef" roughness={0.7} />
-      </mesh>
-    </group>
-  );
-}
-
-function Limb({ limbRef, radius }: { limbRef: React.RefObject<THREE.Mesh | null>; radius: number }) {
-  return (
-    <mesh ref={limbRef}>
-      <cylinderGeometry args={[radius * 0.85, radius, 1, 12]} />
-      <meshStandardMaterial color={SUIT} roughness={0.75} />
-    </mesh>
-  );
-}
-
 export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
   const wheelSpin = useRef<THREE.Group>(null);
   const lever = useRef<THREE.Group>(null);
-  const handR = useRef<THREE.Group>(null);
-  const upperL = useRef<THREE.Mesh>(null);
-  const lowerL = useRef<THREE.Mesh>(null);
-  const upperR = useRef<THREE.Mesh>(null);
-  const lowerR = useRef<THREE.Mesh>(null);
+  const { scene: driverScene } = useGLTF(DRIVER_URL);
+  const driver = useMemo(() => seatDriver(createDriver(driverScene, { firstPerson: true })), [driverScene]);
   const anchorL = useRef<THREE.Object3D>(null);
   const anchorR = useRef<THREE.Object3D>(null);
   const root = useRef<THREE.Group>(null);
@@ -239,7 +183,18 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
   }, []);
   const state = useRef({ gear: 1, steer: 0, shiftT: 1, lastDash: "", leverFrom: [0, 0] as [number, number] });
   const tmp = useMemo(
-    () => ({ a: new THREE.Vector3(), b: new THREE.Vector3(), knob: new THREE.Vector3(), el: new THREE.Vector3(), q: new THREE.Quaternion() }),
+    () => ({
+      pos: new THREE.Vector3(),
+      radial: new THREE.Vector3(),
+      axis: new THREE.Vector3(),
+      wrist: new THREE.Vector3(),
+      palm: new THREE.Vector3(),
+      knob: new THREE.Vector3(),
+      knobWrist: new THREE.Vector3(),
+      knobFingers: new THREE.Vector3(),
+      down: new THREE.Vector3(),
+      q: new THREE.Quaternion(),
+    }),
     [],
   );
 
@@ -247,7 +202,7 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
     update({ steer, gear, speedKmh, rpm, delta }) {
       const s = state.current;
       const r = root.current;
-      if (!r || !wheelSpin.current || !lever.current || !handR.current || !anchorL.current || !anchorR.current) return;
+      if (!r || !wheelSpin.current || !lever.current || !anchorL.current || !anchorR.current) return;
       s.steer += (steer - s.steer) * (1 - Math.exp(-delta * 10));
       wheelSpin.current.rotation.z = -s.steer * 1.6; // left input turns the top of the wheel left (+x)
 
@@ -258,32 +213,37 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
       }
       s.shiftT = Math.min(1, s.shiftT + delta / SHIFT_TIME);
       // Hand out (0..0.35), lever moves (0.35..0.65), hand back (0.65..1).
-      const reach = s.shiftT < 0.35 ? s.shiftT / 0.35 : s.shiftT < 0.65 ? 1 : 1 - (s.shiftT - 0.65) / 0.35;
+      const reach01 = s.shiftT < 0.35 ? s.shiftT / 0.35 : s.shiftT < 0.65 ? 1 : 1 - (s.shiftT - 0.65) / 0.35;
       const move = THREE.MathUtils.smoothstep(s.shiftT, 0.35, 0.65);
       const to = leverAngles(gear);
       lever.current.rotation.set(s.leverFrom[0] + (to[0] - s.leverFrom[0]) * move, 0, s.leverFrom[1] + (to[1] - s.leverFrom[1]) * move);
 
-      // Right hand: blend from its grip on the rim to the lever knob, keeping the rim's orientation while on it.
+      // Hands. On the wheel a hand wraps the rim from outside: palm against it facing the hub, fingers pointing
+      // away from the driver and curling round. The right hand leaves for the gear knob on every change,
+      // palm down on top of it, and comes back. The arms follow by themselves.
       r.updateMatrixWorld();
-      anchorR.current.getWorldPosition(tmp.a);
-      r.worldToLocal(tmp.a);
-      lever.current.localToWorld(tmp.knob.set(0, LEVER_LEN + 0.01, 0));
-      r.worldToLocal(tmp.knob);
-      const e = THREE.MathUtils.smootherstep(reach, 0, 1);
-      handR.current.position.lerpVectors(tmp.a, tmp.knob, e);
-      anchorR.current.getWorldQuaternion(tmp.q);
-      handR.current.quaternion.copy(r.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(tmp.q));
-      handR.current.quaternion.slerp(new THREE.Quaternion(), e);
-
-      // Arms: shoulder -> elbow -> hand.
-      anchorL.current.getWorldPosition(tmp.b);
-      r.worldToLocal(tmp.b);
-      elbow(SHOULDER_L, tmp.b, 1, tmp.el);
-      span(upperL.current!, SHOULDER_L, tmp.el);
-      span(lowerL.current!, tmp.el, tmp.b);
-      elbow(SHOULDER_R, handR.current.position, -1, tmp.el);
-      span(upperR.current!, SHOULDER_R, tmp.el);
-      span(lowerR.current!, tmp.el, handR.current.position);
+      const e = THREE.MathUtils.smootherstep(reach01, 0, 1);
+      for (const side of ["Left", "Right"] as const) {
+        const anchor = side === "Left" ? anchorL.current : anchorR.current;
+        anchor.getWorldPosition(tmp.pos);
+        anchor.getWorldQuaternion(tmp.q);
+        // The anchor's x axis runs along the wheel's radius (outward on the left, inward on the right), z along the column.
+        tmp.radial.set(side === "Left" ? 1 : -1, 0, 0).applyQuaternion(tmp.q);
+        tmp.axis.set(0, 0, 1).applyQuaternion(tmp.q);
+        tmp.wrist.copy(tmp.pos).addScaledVector(tmp.radial, PALM).addScaledVector(tmp.axis, -WRIST);
+        tmp.palm.copy(tmp.radial).negate();
+        if (side === "Right" && e > 0) {
+          r.getWorldQuaternion(tmp.q);
+          lever.current.localToWorld(tmp.knob.set(0, LEVER_LEN + 0.01, 0));
+          tmp.knobFingers.set(0.2, 0, 1).normalize().applyQuaternion(tmp.q);
+          tmp.down.set(0, -1, 0).applyQuaternion(tmp.q);
+          tmp.knobWrist.copy(tmp.knob).addScaledVector(tmp.down, -PALM).addScaledVector(tmp.knobFingers, -WRIST);
+          tmp.wrist.lerp(tmp.knobWrist, e);
+          tmp.axis.lerp(tmp.knobFingers, e).normalize();
+          tmp.palm.lerp(tmp.down, e).normalize();
+        }
+        reach(driver, side, tmp.wrist, tmp.axis, tmp.palm);
+      }
 
       const key = `${gear}|${Math.round(speedKmh / 2)}|${Math.round(rpm / 100)}`;
       if (key !== s.lastDash) {
@@ -381,20 +341,11 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
           {/* Grip points at 10 and 2 o'clock, turned so a fist's grip axis follows the rim */}
           <object3D ref={anchorL} position={[RIM * Math.cos(GRIP_ANGLE), RIM * Math.sin(GRIP_ANGLE), 0]} rotation={[0, 0, GRIP_ANGLE]} />
           <object3D ref={anchorR} position={[-RIM * Math.cos(GRIP_ANGLE), RIM * Math.sin(GRIP_ANGLE), 0]} rotation={[0, 0, -GRIP_ANGLE]} />
-          <group position={[RIM * Math.cos(GRIP_ANGLE), RIM * Math.sin(GRIP_ANGLE), 0]} rotation={[0, 0, GRIP_ANGLE]}>
-            <Fist />
-          </group>
         </group>
       </group>
 
-      {/* Right hand (travels between wheel and lever) and both arms */}
-      <group ref={handR}>
-        <Fist />
-      </group>
-      <Limb limbRef={upperL} radius={0.045} />
-      <Limb limbRef={lowerL} radius={0.036} />
-      <Limb limbRef={upperR} radius={0.045} />
-      <Limb limbRef={lowerR} radius={0.036} />
+      {/* The driver's own body: suited arms and gloved hands (head left out, the camera is inside it) */}
+      <primitive object={driver.root} />
 
       {/* Lower cabin. Sizes come from the model: windscreen base and window sills at 0.79 m, body 1.36 m wide inside. */}
       {/* Dash, with an aluminium strip and two vents on its face */}

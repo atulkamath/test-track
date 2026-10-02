@@ -4,7 +4,7 @@ import { useGLTF } from "@react-three/drei";
 import { forwardRef, useMemo } from "react";
 import * as THREE from "three";
 import { NIGHT } from "./materials";
-import { getPoses, MAN_URL, PART } from "./people";
+import { createDriver, DRIVER_SCALE, DRIVER_URL } from "./driverRig";
 
 // Player: Generic Coupe "Azura" by mk2design. AI: Generic passenger car pack by Comrade1280. Both CC-BY 4.0,
 // see CREDITS.md. scripts/convert-cars.mjs normalises them: real-world metres, origin on the ground,
@@ -57,45 +57,17 @@ export const Car = forwardRef<THREE.Group, { model: string; variant?: number }>(
 /** Where the driver's seat is in each car (car-local metres): x left, y seat height, z forward. Left-hand drive. */
 const SEAT: Record<string, [number, number, number]> = { azura: [0.31, 0.3, -0.05] };
 const DEFAULT_SEAT: [number, number, number] = [0.34, 0.33, -0.12];
-/** Drivers are scaled down a little: the cars are slightly smaller than real ones. */
-const DRIVER_SCALE = 0.82;
-const SUITS = ["#c8322b", "#1d3f7a", "#e9ecef", "#1d1f24", "#e0701e"];
-const HELMETS = ["#f2c230", "#e9ecef", "#c8322b", "#2f6fd6", "#1d1f24"];
+/** Suit tint per driver (multiplies the red-and-white suit): the player's is left as made. */
+const SUITS = [undefined, "#8fb0ff", "#ffe08a", "#9be0a0", "#c9c9d2"];
 
-/** A helmeted driver in a reclined driving pose. Named "driver" so the cockpit view can hide the player's own. */
+/** The race driver sat in the car, hands on the wheel. Named "driver" so the cockpit view can hide the player's own. */
 export function DriverFigure({ model, variant = 0 }: { model: string; variant?: number }) {
-  const gltf = useGLTF(MAN_URL);
-  const { geometry, head } = useMemo(() => {
-    const pose = getPoses(gltf.scene, gltf.animations[0]).drive;
-    const g = pose.geometry.clone();
-    // Paint by body part: race suit, dark gloves and boots.
-    const part = g.getAttribute("part");
-    const suit = new THREE.Color(SUITS[variant % SUITS.length]);
-    const dark = new THREE.Color("#15171b");
-    const colors = new Float32Array(part.count * 3);
-    for (let i = 0; i < part.count; i++) {
-      const p = part.getX(i);
-      const c = p === PART.pants || p === PART.shirt ? suit : dark;
-      colors.set([c.r, c.g, c.b], i * 3);
-    }
-    g.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-    return { geometry: g, head: pose.neck.clone().add(new THREE.Vector3(0, 0.13, 0.02)) };
-  }, [gltf, variant]);
+  const { scene } = useGLTF(DRIVER_URL);
+  const rig = useMemo(() => createDriver(scene, { suit: SUITS[variant % SUITS.length] }), [scene, variant]);
   const seat = SEAT[model] ?? DEFAULT_SEAT;
   return (
     <group name="driver" position={seat} scale={DRIVER_SCALE}>
-      <mesh geometry={geometry} castShadow>
-        <meshStandardMaterial vertexColors roughness={0.75} />
-      </mesh>
-      {/* Helmet with a dark visor */}
-      <mesh position={head} castShadow>
-        <sphereGeometry args={[0.16, 20, 16]} />
-        <meshStandardMaterial color={HELMETS[variant % HELMETS.length]} roughness={0.25} metalness={0.1} />
-      </mesh>
-      <mesh position={[head.x, head.y + 0.01, head.z + 0.09]} scale={[1, 0.42, 0.7]}>
-        <sphereGeometry args={[0.135, 16, 12]} />
-        <meshStandardMaterial color="#0b0d10" roughness={0.1} metalness={0.6} />
-      </mesh>
+      <primitive object={rig.root} />
     </group>
   );
 }
@@ -159,5 +131,5 @@ export function animateCar(group: THREE.Group, anim: CarAnim, speed: number, ang
 }
 
 useGLTF.preload(url(PLAYER_MODEL));
+useGLTF.preload(DRIVER_URL);
 BOT_MODELS.forEach((m) => useGLTF.preload(url(m)));
-useGLTF.preload(MAN_URL);

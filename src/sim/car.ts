@@ -50,14 +50,20 @@ const STEER_SPEED_SCALE = 40;
 const STEER_RATE = 5;
 const STEER_RETURN = 8;
 /**
- * The most sideways acceleration the tyres can give (m/s^2, ~2.4 g: far more than a real road car, to keep it fast).
- * At speed v the car cannot turn faster than LATERAL_GRIP / v, so the tightest line widens with speed squared.
+ * The most sideways acceleration the tyres can give (m/s^2): generous at low speed (~2.4 g, so slow corners stay
+ * quick and fun) and falling to a realistic ~1.2 g flat out, so fast corners have to be respected.
+ * At speed v the car cannot turn faster than grip / v: the tightest line widens faster than speed squared.
  */
 export const LATERAL_GRIP = 24;
+const LATERAL_GRIP_FAST = 12;
+export function lateralGrip(speed: number): number {
+  const f = speed / MAX_SPEED;
+  return LATERAL_GRIP - (LATERAL_GRIP - LATERAL_GRIP_FAST) * (f > 1 ? 1 : f);
+}
 /** Up to this share of the limit the car does exactly what the wheel asks; beyond it the tyres give progressively less. */
 const GRIP_LINEAR = 0.7;
 /** Share of grip lost when the front tyres are asked for far more than they have (heavy understeer). */
-const OVERDRIVE_LOSS = 0.22;
+const OVERDRIVE_LOSS = 0.3;
 /** Braking uses front-tyre grip: this much is left for turning with the brakes on. */
 const BRAKING_TURN_GRIP = 0.6;
 const OFFROAD_TURN_GRIP = 0.5;
@@ -70,6 +76,9 @@ const OVERSTEER_POWER = 0.5;
 /** How much extra the tail comes round, and how much rear grip is lost, at full oversteer. */
 const OVERSTEER_YAW = 0.9;
 const OVERSTEER_SLIP = 0.13;
+/** Lift-off oversteer only happens above this speed (m/s), and swings the tail this much at full slide. */
+const LIFT_OFF_SPEED = 20;
+const LIFT_OFF_YAW = 1.1;
 /** Fraction of sideways velocity kept each tick; lower = grippier. */
 const GRIP = 0.84;
 const OFFROAD_GRIP = 0.7;
@@ -93,7 +102,7 @@ export function stepCar(car: CarState, input: number): CarState {
       // Understeer. `most` is the fastest the tyres can turn the car at this speed (less under braking).
       // Ask for up to 70% of it and you get it; ask for more and you get less and less of the extra, never
       // quite reaching the limit: the car runs progressively wide rather than hitting a wall of grip.
-      const grip = LATERAL_GRIP * (car.offRoad ? OFFROAD_TURN_GRIP : 1) * (input & DOWN && car.speed > 0 ? BRAKING_TURN_GRIP : 1);
+      const grip = lateralGrip(speedAbs) * (car.offRoad ? OFFROAD_TURN_GRIP : 1) * (input & DOWN && car.speed > 0 ? BRAKING_TURN_GRIP : 1);
       const most = (grip / speedAbs) * DT * STEPS_PER_RAD;
       const asked = (turn < 0 ? -turn : turn) / most;
       let got = asked;
@@ -116,6 +125,12 @@ export function stepCar(car: CarState, input: number): CarState {
           got += oversteer * OVERSTEER_YAW;
           if (oversteer > car.slide) car.slide = oversteer;
         }
+      }
+      // Lift-off oversteer: arrive too fast, turn hard and come off the throttle (without braking) and the
+      // weight goes forward, the rear goes light and swings round. Dramatic, and catchable by getting back on the power.
+      if (!(input & (UP | DOWN)) && speedAbs > LIFT_OFF_SPEED && car.slide > 0.5) {
+        oversteer = (car.slide - 0.5) * 2;
+        got += oversteer * LIFT_OFF_YAW;
       }
       turn = (turn < 0 ? -got : got) * most;
     }

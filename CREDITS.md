@@ -56,3 +56,10 @@ HUD font: Exo 2 (SIL Open Font License), via next/font/google.
 ## Made in code
 Track, grandstands, distant spectators, town, pylons, helicopter, blimp, cockpit wheel/hands/gauges, banners and all sound are generated in code.
 Sponsor names are invented.
+
+## Driver
+
+- **"race driver"** by BELAZ — https://sketchfab.com/3d-models/race-driver-e4e97df9865d466c8359fbb23e757308
+  Licence: CC-BY 4.0 (http://creativecommons.org/licenses/by/4.0/). Credit must ship with the game.
+  Changes: packed to one GLB by `scripts/convert-driver.py` (materials converted, normal maps dropped); posed in code,
+  hands recoloured as gloves, suit tinted per driver. File: `public/models/driver.glb`.

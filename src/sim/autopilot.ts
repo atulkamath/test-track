@@ -1,6 +1,6 @@
 // A simple driver that produces inputs exactly like a player would.
 // Drives the AI cars inside the sim, and generates test laps.
-import { BRAKE, DT, LATERAL_GRIP, type CarState } from "./car";
+import { BRAKE, DT, LATERAL_GRIP, lateralGrip, type CarState } from "./car";
 import { DOWN, LEFT, RIGHT, UP } from "./input";
 import type { Track } from "./track";
 import { COS, SIN } from "./trig";
@@ -33,7 +33,7 @@ export function nearestIndex(track: Track, x: number, z: number): number {
 }
 
 /** Share of the tyres' sideways grip a full-pace driver plans to use in a corner. */
-const CORNER_GRIP = 0.8;
+const CORNER_GRIP = 0.66;
 
 /** How fast a driver moves across the road when changing line (m/s). */
 const LINE_RATE = 3.2;
@@ -129,8 +129,15 @@ export function autopilotInput(track: Track, car: CarState, skill: Skill = DEFAU
     const bend = 1 - (t0.x * t1.x + t0.z * t1.z);
     // Corner speed from grip: the road turns through an angle of about sqrt(2 * bend) over those 36 m, which
     // gives its radius, and v^2 = grip * radius. Nearly straight road has no limit worth braking for.
-    const safeSq = bend < 0.0008 ? 10000 : (CORNER_GRIP * LATERAL_GRIP * 36) / Math.sqrt(2 * bend);
-    const safe = Math.sqrt(safeSq) * skill.pace;
+    // Grip falls with speed, so settle on the speed whose own grip holds that radius (two rounds is plenty).
+    let safe = 100;
+    if (bend >= 0.0008) {
+      const radius = 36 / Math.sqrt(2 * bend);
+      safe = Math.sqrt(CORNER_GRIP * LATERAL_GRIP * radius);
+      safe = Math.sqrt(CORNER_GRIP * lateralGrip(safe) * radius);
+      safe = Math.sqrt(CORNER_GRIP * lateralGrip(safe) * radius);
+    }
+    safe *= skill.pace;
     const dist = k * 2; // samples are 2 m apart
     if (speedSq > safe * safe + 2 * BRAKE * 0.7 * dist) brake = true;
   }
