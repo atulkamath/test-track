@@ -265,7 +265,7 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
       const a = (i / 48) * Math.PI * 2;
       pts.push(new THREE.Vector3(RIM * Math.cos(a), Math.max(RIM * Math.sin(a), -RIM * 0.78), 0));
     }
-    return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts, true), 120, 0.021, 12, true);
+    return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts, true), 120, 0.015, 12, true);
   }, []);
   const state = useRef({ gear: 1, steer: 0, shiftT: 1, lastDash: "", leverFrom: [0, 0] as [number, number] });
   const badge = useMemo(() => badgeTexture(), []);
@@ -400,62 +400,25 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
           </mesh>
         </group>
         <group ref={wheelSpin}>
+          {/* Plain and slim: a thin dark rim, three narrow spokes, a small round hub. */}
           <mesh geometry={rimGeometry}>
-            <meshStandardMaterial color="#1c1d20" roughness={0.95} />
+            <meshStandardMaterial color="#1c1d20" roughness={0.9} />
           </mesh>
-          {/* Red top-centre marker */}
-          <mesh position={[0, RIM, 0]}>
-            <boxGeometry args={[0.014, 0.046, 0.046]} />
-            <meshStandardMaterial color="#d8322b" roughness={0.6} />
-          </mesh>
-          {/* Three satin-black spokes with an aluminium inlay: left, right, bottom */}
           {(
             [
-              [0.078, 0, 0, 0.13],
-              [-0.078, 0, 0, 0.13],
+              [0.075, 0, 0, 0.125],
+              [-0.075, 0, 0, 0.125],
               [0, -0.062, Math.PI / 2, 0.1],
             ] as const
           ).map(([x, y, rz, len]) => (
-            <group key={`${x},${y}`} position={[x, y, 0.004]} rotation={[0, 0, rz]}>
-              <mesh>
-                <boxGeometry args={[len, 0.034, 0.012]} />
-                <meshStandardMaterial color="#111215" metalness={0.6} roughness={0.4} />
-              </mesh>
-              <mesh position={[0, 0, -0.0065]}>
-                <boxGeometry args={[len * 0.8, 0.006, 0.002]} />
-                {chrome}
-              </mesh>
-            </group>
-          ))}
-          {/* Thumb buttons */}
-          {(
-            [
-              [0.062, 0.011, "#e0302a"],
-              [0.09, 0.011, "#f2c230"],
-              [-0.062, 0.011, "#2f8fe0"],
-              [-0.09, 0.011, "#3cc46a"],
-            ] as const
-          ).map(([x, y, color]) => (
-            <mesh key={x} position={[x, y, -0.004]} rotation={[Math.PI / 2, 0, 0]}>
-              <cylinderGeometry args={[0.007, 0.007, 0.006, 14]} />
-              <meshStandardMaterial color={color} emissive={color} emissiveIntensity={0.35} roughness={0.4} />
+            <mesh key={`${x},${y}`} position={[x, y, 0.004]} rotation={[0, 0, rz]}>
+              <boxGeometry args={[len, 0.016, 0.008]} />
+              <meshStandardMaterial color="#2a2c30" metalness={0.7} roughness={0.35} />
             </mesh>
           ))}
-          {/* Shift paddles behind the spokes */}
-          {[0.105, -0.105].map((x) => (
-            <mesh key={x} position={[x, 0.03, 0.022]}>
-              <boxGeometry args={[0.05, 0.075, 0.005]} />
-              {chrome}
-            </mesh>
-          ))}
-          {/* Centre pad */}
-          <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, -0.006]}>
-            <cylinderGeometry args={[0.046, 0.054, 0.035, 28]} />
+          <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, -0.004]}>
+            <cylinderGeometry args={[0.034, 0.036, 0.024, 28]} />
             {leather}
-          </mesh>
-          <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, -0.026]}>
-            <torusGeometry args={[0.02, 0.003, 8, 24]} />
-            {chrome}
           </mesh>
           {/* Grip points at 10 and 2 o'clock, turned so a fist's grip axis follows the rim */}
           <object3D ref={anchorL} position={[RIM * Math.cos(GRIP_ANGLE), RIM * Math.sin(GRIP_ANGLE), 0]} rotation={[0, 0, GRIP_ANGLE]} />

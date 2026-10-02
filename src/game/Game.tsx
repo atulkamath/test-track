@@ -740,9 +740,7 @@ function Race({ map, onPickMap }: { map: ChosenMap; onPickMap: (id: MapId) => vo
             Start race <kbd>Enter</kbd>
           </button>
           <div className={styles.keys}>
-            <span>↑ / W accelerate</span>
-            <span>↓ / S brake</span>
-            <span>← → steer</span>
+            <span>Drive with the arrow keys or WASD</span>
             <span>C camera</span>
             <span>M sound</span>
             <span>R restart</span>
