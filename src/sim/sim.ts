@@ -208,49 +208,6 @@ export function stepTraffic(sim: Sim): void {
   updateProgress(sim);
 }
 
-/**
- * Testing aid, never part of a replay: jump the whole field to roughly `seconds` before the end of the final lap,
- * bunched up for a close finish. Everyone arrives at a speed safe for any corner and accelerates from there.
- */
-export function skipToFinish(sim: Sim, seconds = 5): void {
-  const s = sim.state;
-  const { points, tangents, gates } = sim.track;
-  const n = points.length;
-  const speed = 16;
-  // Distance covered in that time, accelerating from `speed` at about 6 m/s^2.
-  const metres = speed * seconds + 3 * seconds * seconds;
-  const back = Math.min(Math.round(metres / (sim.track.length / n)), n >> 1);
-  // Sample offsets from the player (ahead positive) and metres across the road, for the player then each AI car.
-  const spots: [number, number][] = [[0, 0], [12, 2.4], [5, -2.4], [-6, 2.4], [-13, -2.4]];
-  const cars = [s.car, ...s.bots];
-  cars.forEach((car, c) => {
-    const [ahead, across] = spots[c % spots.length];
-    const i = n - back + ahead;
-    const p = points[i];
-    const t = tangents[i];
-    car.x = p.x - t.z * across;
-    car.z = p.z + t.x * across;
-    car.heading = headingFromVector(t.x, t.z);
-    car.vx = t.x * speed;
-    car.vz = t.z * speed;
-    car.speed = speed;
-    car.steer = 0;
-    s.trackIndex[c] = i;
-    s.progress[c] = (LAPS - 1) * n + i;
-    if (c > 0) s.botLine[c - 1] = across;
-  });
-  // The next checkpoint is the first one still ahead, or the finish line if they are all behind.
-  let next = 0;
-  for (let k = gates.length - 1; k >= 1; k--) if (Math.round((k * n) / gates.length) > n - back) next = k;
-  s.nextGate = next;
-  s.lap = LAPS - 1;
-  // Pretend the lap so far was driven at this speed, so the lap time shown is believable.
-  const lapSoFar = Math.round((((n - back) * sim.track.length) / n / 33) * 60);
-  s.tick += lapSoFar;
-  s.lapStartTick = s.tick - lapSoFar;
-  s.lapTicks = null;
-}
-
 /** Stable fingerprint of the full sim state. Number->string is exactly specified, so this is portable. */
 export function hashState(state: SimState): string {
   return hashString(JSON.stringify(state)).toString(16).padStart(8, "0");

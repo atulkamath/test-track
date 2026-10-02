@@ -649,12 +649,6 @@ function Race({ map, onPickMap }: { map: ChosenMap; onPickMap: (id: MapId) => vo
     }
   }, [engine, lapTicks, gears]);
 
-  /** Dev only: jump to the last five seconds of the final lap, to test the finish. */
-  const skipToFinish = () => {
-    begin();
-    engine.skipToFinish(5);
-  };
-
   return (
     <div className={styles.root}>
       <Canvas
@@ -715,12 +709,6 @@ function Race({ map, onPickMap }: { map: ChosenMap; onPickMap: (id: MapId) => vo
       <div className={styles.offRoad} ref={offRoadEl}>
         Off road
       </div>
-
-      {process.env.NODE_ENV !== "production" && lapTicks === null && (
-        <button className={styles.devButton} onClick={skipToFinish}>
-          Dev · last 5 s
-        </button>
-      )}
 
       {/* Start screen: pick a map, then start; the lights count down from there. */}
       {!started && lapTicks === null && (
