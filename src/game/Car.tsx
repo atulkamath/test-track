@@ -15,6 +15,44 @@ const url = (model: string) => `/models/${model}.glb`;
 const FRONT_WHEELS = ["wheel-front-left", "wheel-front-right"];
 const ALL_WHEELS = [...FRONT_WHEELS, "wheel-back-left", "wheel-back-right"];
 
+const finished = new WeakMap<THREE.Material, THREE.MeshStandardMaterial>();
+
+/**
+ * The models' materials are plain. Bodywork becomes two-layer car paint (coloured base under a glossy clear
+ * lacquer that mirrors the sky), glass and chrome are polished up. Names are kept: other code finds materials by name.
+ */
+function finish(mat: THREE.MeshStandardMaterial): THREE.MeshStandardMaterial {
+  const done = finished.get(mat);
+  if (done) return done;
+  let out = mat;
+  if (/Body/i.test(mat.name)) {
+    out = new THREE.MeshPhysicalMaterial({
+      name: mat.name,
+      color: mat.color,
+      map: mat.map,
+      normalMap: mat.normalMap,
+      side: mat.side,
+      // Untextured paint (the player's car) can take a metallic base; textured bodies include trim, so stay milder.
+      metalness: mat.map ? 0.25 : 0.55,
+      roughness: mat.map ? 0.42 : 0.32,
+      clearcoat: 1,
+      clearcoatRoughness: 0.035,
+      envMapIntensity: 2.4,
+    });
+  } else if (/Glass(_\d+)?$/i.test(mat.name)) {
+    out = mat.clone();
+    out.roughness = 0.02;
+    out.metalness = 0.6;
+    out.envMapIntensity = 2.6;
+  } else if (/Chrome|Alloy/i.test(mat.name)) {
+    out = mat.clone();
+    out.roughness = Math.min(mat.roughness, 0.08);
+    out.envMapIntensity = 2.4;
+  }
+  finished.set(mat, out);
+  return out;
+}
+
 export const Car = forwardRef<THREE.Group, { model: string; variant?: number }>(function Car({ model, variant = 0 }, ref) {
   const { scene } = useGLTF(url(model));
   const root = useMemo(() => {
@@ -25,7 +63,10 @@ export const Car = forwardRef<THREE.Group, { model: string; variant?: number }>(
       if (!(o instanceof THREE.Mesh)) return;
       o.castShadow = true;
       o.receiveShadow = true;
-      const mat = o.material as THREE.MeshStandardMaterial;
+      let mat = o.material as THREE.MeshStandardMaterial;
+      // Showroom finish: lacquered paint, clear glass, bright chrome.
+      const fresh = finish(mat);
+      if (fresh !== mat) o.material = mat = fresh;
       // Sharpest filtering for surfaces seen at shallow angles (bonnet, flanks, wheels).
       for (const map of [mat.map, mat.normalMap, mat.roughnessMap, mat.metalnessMap]) if (map) map.anisotropy = 16;
       if (/glass_red/i.test(mat.name)) {

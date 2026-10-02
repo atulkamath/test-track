@@ -1,6 +1,6 @@
 // Camera views. Visual only.
 import * as THREE from "three";
-import type { Pose } from "./engine";
+import { START_DELAY, type Pose } from "./engine";
 
 // The first view is the default.
 export const VIEWS = ["Chase", "Far chase", "Cockpit", "Roof", "Bumper", "TV"] as const;
@@ -50,10 +50,39 @@ export class CameraRig {
   /** tvSpots: trackside camera positions (x, y, z) for the TV view. */
   constructor(private tvSpots: THREE.Vector3[]) {}
 
+  /**
+   * Start-light sequence, one shot per light: a low front three-quarter view creeping in, a pan along the grid
+   * from the side, then a rear-wheel close-up that rises into the chase position as the lights go out.
+   */
+  private startShots(camera: THREE.PerspectiveCamera, p: Pose, t: number, fx: number, fz: number) {
+    const at = (ahead: number, side: number, y: number, v: THREE.Vector3) => v.set(p.x + fx * ahead + fz * side, y, p.z + fz * ahead - fx * side);
+    if (t < 1) {
+      at(7 - t * 1.2, 2.4, 0.55, camera.position);
+      at(0, 0, 0.7, this.look);
+      camera.fov = 38;
+    } else if (t < 2) {
+      const along = -13 + (t - 1) * 10;
+      at(along, 3, 1.1, camera.position);
+      at(along + 5, 0, 0.8, this.look);
+      camera.fov = 46;
+    } else {
+      const s = THREE.MathUtils.smoothstep(t - 2, 0, 1);
+      at(-2.2 - s * 2.6, 1.6 - s * 1.5, 0.45 + s * 1.05, camera.position);
+      at(s * 6, 0, 0.5 + s * 0.5, this.look);
+      camera.fov = 50 + s * 8;
+    }
+    camera.lookAt(this.look);
+    camera.updateProjectionMatrix();
+    // Whatever view comes next starts fresh rather than easing from wherever the last shot left off.
+    this.snapped = false;
+    this.lastView = null;
+  }
+
   /** carRoot + eye: the car's transform and the driver's eye in car-local coordinates (for the cockpit view). */
-  update(camera: THREE.PerspectiveCamera, view: View, p: Pose, speed: number, offRoad: boolean, delta: number, carRoot?: THREE.Object3D, eye?: THREE.Vector3) {
+  update(camera: THREE.PerspectiveCamera, view: View, p: Pose, speed: number, offRoad: boolean, delta: number, carRoot?: THREE.Object3D, eye?: THREE.Vector3, intro = 0) {
     const fx = Math.sin(p.angle);
     const fz = Math.cos(p.angle);
+    if (intro > 0) return this.startShots(camera, p, START_DELAY - intro, fx, fz);
     const speedFrac = Math.min(Math.abs(speed) / 64, 1);
     const changed = view !== this.lastView;
     this.lastView = view;

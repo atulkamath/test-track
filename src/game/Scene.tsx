@@ -1,11 +1,12 @@
 "use client";
 
 import { useGLTF } from "@react-three/drei";
+import { useFrame } from "@react-three/fiber";
 import { useMemo } from "react";
 import * as THREE from "three";
 import { hashString, mulberry32 } from "@/sim/rng";
 import { GRID_SIDE, gridSlot, type Track } from "@/sim";
-import { grassMaterial, roadMaterial } from "./materials";
+import { grassMaterial, roadMaterial, SUN_DIR } from "./materials";
 import type { TreeSpot } from "./layout";
 import type { HeightFn } from "./terrain";
 
@@ -223,6 +224,91 @@ const MAPLES_URL = "/models/trees/maples.glb";
  * Maple trees (Quaternius, CC0 — see CREDITS.md): five modelled trees with real trunks, branches and leaf
  * clusters, instanced in clumps and tree lines. Most are in summer green, some in autumn red. Scenery only.
  */
+/** Shared clock for the wind in the leaves. */
+const LEAF_TIME = { value: 0 };
+function setLeafTime(t: number) {
+  LEAF_TIME.value = t;
+}
+
+/**
+ * Shafts of sunlight coming down through the canopy of the trees a map has planted. Each is a pair of crossed,
+ * see-through sheets running from the crown to the ground along the sun's direction, brightest in the middle and
+ * faintly shimmering: drawn in the world, so nothing is done to the finished picture.
+ */
+export function SunShafts({ spots }: { spots: TreeSpot[] }) {
+  const { geometry, material } = useMemo(() => {
+    const down = SUN_DIR.clone().negate();
+    const w1 = new THREE.Vector3().crossVectors(down, new THREE.Vector3(0, 1, 0)).normalize();
+    const w2 = new THREE.Vector3().crossVectors(down, w1).normalize();
+    const pos: number[] = [];
+    const uv: number[] = [];
+    const phase: number[] = [];
+    spots.forEach((t, i) => {
+      if (i % 2) return;
+      const topY = t.height * 0.72;
+      // Start a little off-centre in the crown, so the shafts of a row of trees don't line up.
+      const top = new THREE.Vector3(t.x + Math.sin(i * 2.4) * 1.2, topY, t.z + Math.cos(i * 1.7) * 1.2);
+      const foot = top.clone().addScaledVector(down, topY / SUN_DIR.y);
+      const half = 0.7 + (i % 5) * 0.16;
+      for (const w of [w1, w2]) {
+        const corners = [
+          [top.clone().addScaledVector(w, -half), 0, 0],
+          [top.clone().addScaledVector(w, half), 1, 0],
+          [foot.clone().addScaledVector(w, -half * 1.5), 0, 1],
+          [foot.clone().addScaledVector(w, half * 1.5), 1, 1],
+        ] as const;
+        for (const k of [0, 2, 1, 1, 2, 3]) {
+          const [v, u, vv] = corners[k];
+          pos.push(v.x, v.y, v.z);
+          uv.push(u, vv);
+          phase.push(i * 0.37);
+        }
+      }
+    });
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+    geometry.setAttribute("aPhase", new THREE.Float32BufferAttribute(phase, 1));
+    const material = new THREE.ShaderMaterial({
+      uniforms: { uTime: LEAF_TIME },
+      transparent: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      vertexShader: /* glsl */ `
+        attribute float aPhase;
+        varying vec2 vUv;
+        varying float vPhase;
+        varying float vDist;
+        void main() {
+          vUv = uv;
+          vPhase = aPhase;
+          vec4 mv = viewMatrix * vec4(position, 1.0);
+          vDist = -mv.z;
+          gl_Position = projectionMatrix * mv;
+        }`,
+      fragmentShader: /* glsl */ `
+        uniform float uTime;
+        varying vec2 vUv;
+        varying float vPhase;
+        varying float vDist;
+        void main() {
+          // Soft across the width, with a few brighter streaks; fades in below the crown and out at the ground.
+          float across = 1.0 - abs(vUv.x - 0.5) * 2.0;
+          float streaks = 0.65 + 0.35 * sin(vUv.x * 19.0 + vPhase * 9.0);
+          float along = smoothstep(0.0, 0.25, vUv.y) * (1.0 - smoothstep(0.75, 1.0, vUv.y));
+          float shimmer = 0.8 + 0.2 * sin(uTime * 0.9 + vPhase * 13.0 + vUv.x * 5.0);
+          // Gone when the camera is right inside one, and in the far distance.
+          float range = smoothstep(2.0, 9.0, vDist) * (1.0 - smoothstep(90.0, 160.0, vDist));
+          float a = across * across * streaks * along * shimmer * range * 0.085;
+          gl_FragColor = vec4(vec3(1.0, 0.93, 0.76) * a, a);
+        }`,
+    });
+    return { geometry, material };
+  }, [spots]);
+  return <mesh geometry={geometry} material={material} frustumCulled={false} />;
+}
+
 export function Trees({
   track,
   reserved,
@@ -266,6 +352,34 @@ export function Trees({
     const foliage = (map: THREE.Texture | null) => {
       // Leaves are cut-out cards: alpha-test them (cheap, sorts correctly, casts leaf-shaped shadows).
       const m = new THREE.MeshStandardMaterial({ map, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.85 });
+      m.onBeforeCompile = (shader) => {
+        shader.uniforms.uLeafTime = LEAF_TIME;
+        shader.uniforms.uSunDir = { value: SUN_DIR };
+        // Wind: the canopy sways, more the higher up, each tree out of step with its neighbours.
+        shader.vertexShader = shader.vertexShader.replace("#include <common>", "#include <common>\nuniform float uLeafTime;").replace(
+          "#include <begin_vertex>",
+          /* glsl */ `#include <begin_vertex>
+          #ifdef USE_INSTANCING
+            float leafPhase = instanceMatrix[3].x * 0.31 + instanceMatrix[3].z * 0.23;
+          #else
+            float leafPhase = 0.0;
+          #endif
+          float leafSway = sin(uLeafTime * 1.3 + leafPhase + position.y * 0.9) + 0.5 * sin(uLeafTime * 2.9 + leafPhase * 1.7 + position.x * 2.0);
+          transformed.x += leafSway * 0.012 * position.y;
+          transformed.z += leafSway * 0.007 * position.y;`,
+        );
+        // Leaves are thin: sunlight comes through them. Seen against the sun the canopy glows instead of going dark.
+        shader.fragmentShader = shader.fragmentShader.replace("#include <common>", "#include <common>\nuniform vec3 uSunDir;").replace(
+          "#include <emissivemap_fragment>",
+          /* glsl */ `#include <emissivemap_fragment>
+          {
+            vec3 sunView = normalize((viewMatrix * vec4(uSunDir, 0.0)).xyz);
+            float against = pow(max(dot(-normalize(vViewPosition), sunView), 0.0), 3.0);
+            totalEmissiveRadiance += diffuseColor.rgb * vec3(1.0, 0.92, 0.78) * (0.1 + 0.75 * against);
+          }`,
+        );
+      };
+      m.customProgramCacheKey = () => "leaf-translucent";
       return m;
     };
     const green = new THREE.TextureLoader().load("/textures/maple_leaves_green.webp");
@@ -322,6 +436,8 @@ export function Trees({
     });
     return lists;
   }, [track, reserved, height, kinds, spots]);
+
+  useFrame(({ clock }) => setLeafTime(clock.elapsedTime));
 
   const fill = (mats: THREE.Matrix4[]) => (mesh: THREE.InstancedMesh | null) => {
     if (!mesh) return;

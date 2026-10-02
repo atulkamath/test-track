@@ -131,17 +131,23 @@ export interface SkidHandle {
 }
 
 const SKID_CAPACITY = 2400;
-const SMOKE_CAPACITY = 360;
+const SMOKE_CAPACITY = 700;
 /** Seconds a puff of tyre smoke lasts. */
-const SMOKE_LIFE = 1.5;
+const SMOKE_LIFE = 2.6;
 
-/** Tyre smoke: soft puffs that rise, swell and fade. Each particle is a point with a birth time; the shader does the rest. */
+/**
+ * Tyre smoke: each particle is a point with a birth time and a random seed; the shader does the rest. A puff
+ * starts small and dense at the tyre, billows out fast then slowly, rises, drifts downwind and thins away.
+ * Its outline is lumpy and turns slowly, so overlapping puffs read as one rolling cloud rather than discs.
+ */
 function makeSmoke() {
   const position = new Float32Array(SMOKE_CAPACITY * 3);
   const birth = new Float32Array(SMOKE_CAPACITY).fill(-1000);
+  const seed = new Float32Array(SMOKE_CAPACITY);
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(position, 3));
   geometry.setAttribute("aBirth", new THREE.BufferAttribute(birth, 1));
+  geometry.setAttribute("aSeed", new THREE.BufferAttribute(seed, 1));
   const uniforms = { uTime: { value: 0 } };
   const material = new THREE.ShaderMaterial({
     uniforms,
@@ -150,23 +156,46 @@ function makeSmoke() {
     vertexShader: /* glsl */ `
       uniform float uTime;
       attribute float aBirth;
+      attribute float aSeed;
       varying float vFade;
+      varying float vSeed;
+      varying float vAge;
       void main() {
         float age = uTime - aBirth;
-        float life = ${SMOKE_LIFE.toFixed(2)};
-        vFade = age < 0.0 || age > life ? 0.0 : 1.0 - age / life;
-        vec3 p = position + vec3(0.0, age * 1.1, 0.0);
+        float t = age / ${SMOKE_LIFE.toFixed(2)};
+        bool alive = age >= 0.0 && t < 1.0;
+        // Quick to appear, slow to thin out.
+        vFade = alive ? smoothstep(0.0, 0.06, t) * pow(1.0 - t, 1.6) : 0.0;
+        vSeed = aSeed;
+        vAge = age;
+        // Rises quickly at first then hangs; carried downwind, each puff on its own slightly different path.
+        vec3 p = position;
+        p.y += 1.5 * (1.0 - exp(-age * 1.1)) + age * 0.25;
+        p.x += age * (0.9 + aSeed * 0.5) + sin(age * 1.7 + aSeed * 30.0) * 0.18;
+        p.z += age * (0.35 + fract(aSeed * 7.3) * 0.4);
         vec4 mv = viewMatrix * vec4(p, 1.0);
         gl_Position = projectionMatrix * mv;
-        gl_PointSize = vFade > 0.0 ? (0.5 + age * 2.4) * 520.0 / max(-mv.z, 0.5) : 0.0;
+        float size = 0.45 + 2.6 * (1.0 - exp(-age * 1.8)) + age * 0.5;
+        gl_PointSize = alive ? size * (0.8 + aSeed * 0.4) * 520.0 / max(-mv.z, 0.5) : 0.0;
       }`,
     fragmentShader: /* glsl */ `
       varying float vFade;
+      varying float vSeed;
+      varying float vAge;
       void main() {
-        float d = length(gl_PointCoord - 0.5) * 2.0;
-        float soft = 1.0 - smoothstep(0.2, 1.0, d);
-        if (soft * vFade < 0.01) discard;
-        gl_FragColor = vec4(vec3(0.86), soft * vFade * 0.32);
+        vec2 c = gl_PointCoord - 0.5;
+        // Turn each puff slowly, and push its edge in and out so it isn't a perfect disc.
+        float a = vSeed * 6.283 + vAge * (vSeed - 0.5) * 1.2;
+        c = mat2(cos(a), -sin(a), sin(a), cos(a)) * c;
+        float ang = atan(c.y, c.x);
+        float lump = 1.0 + 0.16 * sin(ang * 3.0 + vSeed * 20.0) + 0.09 * sin(ang * 7.0 + vSeed * 50.0);
+        float d = length(c) * 2.0 * lump;
+        float soft = 1.0 - smoothstep(0.15, 1.0, d);
+        float alpha = soft * soft * vFade * 0.3;
+        if (alpha < 0.004) discard;
+        // Sunlit on top, greyer underneath; fresh smoke is whiter than old.
+        float lit = 0.74 + 0.2 * smoothstep(0.3, -0.4, c.y) - 0.06 * min(vAge, 1.5);
+        gl_FragColor = vec4(vec3(lit, lit * 0.985, lit * 0.96), alpha);
       }`,
   });
   let next = 0;
@@ -178,11 +207,11 @@ function makeSmoke() {
     },
     /** Start a puff at (x, z) on the ground. */
     emit(x: number, z: number) {
-      position.set([x + (Math.random() - 0.5) * 0.3, 0.15, z + (Math.random() - 0.5) * 0.3], next * 3);
+      position.set([x + (Math.random() - 0.5) * 0.35, 0.12, z + (Math.random() - 0.5) * 0.35], next * 3);
       birth[next] = uniforms.uTime.value;
+      seed[next] = Math.random();
       next = (next + 1) % SMOKE_CAPACITY;
-      geometry.getAttribute("position").needsUpdate = true;
-      geometry.getAttribute("aBirth").needsUpdate = true;
+      for (const name of ["position", "aBirth", "aSeed"]) geometry.getAttribute(name).needsUpdate = true;
     },
   };
 }
@@ -221,7 +250,7 @@ export const SkidMarks = forwardRef<SkidHandle>(function SkidMarks(_, ref) {
       // Rear wheels: 1 m behind centre, 0.45 m either side.
       const wheels: [number, number][] = [-1, 1].map((s) => [x - fx * 1 + fz * 0.45 * s, z - fz * 1 - fx * 0.45 * s]);
       // A puff from each rear tyre every few frames while it's sliding.
-      if (puffClock.current++ % 3 === 0) for (const [wx, wz] of wheels) smoke.emit(wx, wz);
+      if (puffClock.current++ % 2 === 0) for (const [wx, wz] of wheels) smoke.emit(wx, wz);
       const prev = last.current.get(key);
       if (prev) {
         wheels.forEach(([wx, wz], w) => {

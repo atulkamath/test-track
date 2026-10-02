@@ -3,6 +3,11 @@ import * as THREE from "three";
 
 const loader = new THREE.TextureLoader();
 
+// Sky: "Kloofendal 48d Partly Cloudy (Pure Sky)" from Poly Haven (CC0). It is both the visible sky and the
+// light source; this direction was measured from the HDR file so shadows and backlighting match it.
+/** Direction to the sun in the sky image (48° up); the shadow-casting light shines from here. */
+export const SUN_DIR = new THREE.Vector3(0.554, 0.742, 0.378).normalize();
+
 function tex(file: string, repeat: number, srgb: boolean) {
   const t = loader.load(`/textures/${file}`);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
@@ -144,6 +149,17 @@ export function roadMaterial() {
         diffuseColor.rgb += 0.035 * smoothstep(0.72, 0.95, speck);
         float crack = 1.0 - smoothstep(0.0, 0.035, abs(rnoise(vWPos.xz * 0.55) - 0.5));
         diffuseColor.rgb *= 1.0 - 0.16 * crack * rnoise(vWPos.xz * 0.11);
+        // Proper cracks: thin, dark, branching lines that come in patches, jittered so they are never smooth curves.
+        vec2 cp = vWPos.xz + 0.35 * vec2(rnoise(vWPos.xz * 2.3), rnoise(vWPos.zx * 2.3 + 7.0));
+        float crackArea = smoothstep(0.5, 0.66, rnoise(vWPos.xz * 0.045 + 11.0));
+        float c1 = 1.0 - smoothstep(0.0, 0.012, abs(rnoise(cp * 0.33) - 0.5));
+        float c2 = 1.0 - smoothstep(0.0, 0.016, abs(rnoise(cp * 0.9 + 4.0) - 0.5));
+        float cracks = max(c1, c2 * 0.7) * crackArea;
+        diffuseColor.rgb *= 1.0 - 0.6 * cracks;
+        // Some old cracks have been sealed with tar: wider, black, wandering lines.
+        float sealArea = smoothstep(0.62, 0.72, rnoise(vWPos.xz * 0.03 + 31.0));
+        float tar = (1.0 - smoothstep(0.0, 0.02, abs(rnoise(cp * 0.16 + 9.0) - 0.5))) * sealArea;
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.035), 0.8 * tar);
         // Tar seam down the centre joint.
         float seam = 1.0 - smoothstep(0.0, 0.004, abs(u - 0.5 + 0.003 * sin(along * 9.0)));
         diffuseColor.rgb *= 1.0 - 0.35 * seam;`,

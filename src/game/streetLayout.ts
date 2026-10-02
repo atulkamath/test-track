@@ -159,6 +159,24 @@ export function buildStreetLayout(track: Track): Layout {
       }
       add(f, 0, 6.05, (wall + 0.7) * 2, 0.5, segLen + 0.05, "concrete");
       add(f, 0, 5.74, 0.5, 0.1, 2.4, "lamp");
+      for (const s of [1, -1]) {
+        // Lined like a real road tunnel: pale panels on the lower wall under a dark band, a raised kerb,
+        // a row of wall lights, and a cable tray up under the roof.
+        add(f, s * (wall - 0.02), 1.25, 0.06, 2.1, segLen + 0.05, "plaster");
+        add(f, s * (wall - 0.03), 2.42, 0.07, 0.22, segLen + 0.05, "wood");
+        add(f, s * (wall - 0.1), 0.1, 0.2, 0.2, segLen + 0.05, "asphalt");
+        add(f, s * (wall - 0.08), 3.5, 0.1, 0.16, 1.5, "lamp");
+        add(f, s * (wall - 0.25), 5.3, 0.4, 0.08, segLen + 0.05, "steel");
+      }
+      // Portal at each end: a heavy concrete frame standing proud of the hillside.
+      const prevZone = zoneAt(frame(track, (i - SEG + n) % n).x, frame(track, (i - SEG + n) % n).z);
+      const nextZone = zoneAt(frame(track, (i + SEG) % n).x, frame(track, (i + SEG) % n).z);
+      if (prevZone !== "tunnel" || nextZone !== "tunnel") {
+        const along = (prevZone !== "tunnel" ? -1 : 1) * (segLen / 2 - 0.4);
+        add(f, 0, 7.2, (wall + 2.4) * 2, 2.4, 1.4, "concrete", along);
+        for (const s of [1, -1]) add(f, s * (wall + 1.5), 3.2, 1.9, 6.4, 1.4, "concrete", along);
+        add(f, 0, 5.98, (wall + 0.6) * 2, 0.14, 1.46, "steel", along);
+      }
       add(f, 0, 7.1, (wall + 1) * 2, 1.4, segLen + 0.05, "berm");
       keepClear(f, 0, 22);
     } else if (zone === "east") {

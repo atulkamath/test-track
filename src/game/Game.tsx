@@ -10,13 +10,15 @@ import { COS, DOWN, LAPS, LEFT, RIGHT, SIN, STREET_SEED, UP, generateTrack, race
 import { Sound, type OtherCar } from "./audio";
 import { CameraRig, VIEWS } from "./camera";
 import { animateCar, Car, newCarAnim, PLAYER_MODEL } from "./Car";
+import { SUN_DIR } from "./materials";
+import { Minimap, type MinimapHandle } from "./Minimap";
 import { Cockpit, EYE, type CockpitHandle } from "./Cockpit";
 import { Gearbox } from "./gearbox";
 import { Crowd } from "./Crowd";
 import { BigScreen, Blimp, Helicopter, Lake, Paddock } from "./Life";
 import { Obstacles, SkidMarks, Traffic, type SkidHandle } from "./Dynamic";
 import { Engine, formatTicks, type Pose } from "./engine";
-import { FinishLine, GatePosts, Ground, Road, RunOff, Trees } from "./Scene";
+import { FinishLine, GatePosts, Ground, Road, RunOff, Trees, SunShafts } from "./Scene";
 import { Tacho, type TachoHandle } from "./Tacho";
 import { Pylons, Ridges, Town } from "./Background";
 import { CarPark, CircuitBoxes, FerrisWheel, Flags, GravelTraps, Tents, TimingTower } from "./Circuit";
@@ -202,8 +204,10 @@ function Driver({
     }
 
     const sim = engine.sim.state.car;
-    const viewName = VIEWS[view.current];
-    rig.update(camera as THREE.PerspectiveCamera, viewName, p, speed, sim.offRoad, delta, car.current ?? undefined, EYE);
+    // While the start lights count down the camera cuts round the car; those shots are all from outside.
+    const intro = started.current ? engine.countdown : 0;
+    const viewName = intro > 0 ? "Chase" : VIEWS[view.current];
+    rig.update(camera as THREE.PerspectiveCamera, viewName, p, speed, sim.offRoad, delta, car.current ?? undefined, EYE, intro);
     // From the driver's seat you see the car's real interior, so the car stays visible; only the driver's own
     // body is hidden (the camera is inside his head) and the glass is made clearer. Bumper cam hides the car.
     const inCockpit = viewName === "Cockpit";
@@ -235,6 +239,7 @@ function Driver({
       speed,
       slip: sim.offRoad ? 0 : slip,
       crowd: cn.level,
+      tunnel: layout.tunnels?.some((t) => engine.sim.state.trackIndex[0] >= t.from && engine.sim.state.trackIndex[0] < t.to) ? 1 : 0,
       braking,
       others,
     });
@@ -270,10 +275,6 @@ function Driver({
   );
 }
 
-// Sky: "Kloofendal 48d Partly Cloudy (Pure Sky)" from Poly Haven (CC0). It is both the visible sky and the
-// light source. The two values below were measured from the HDR file so the scene matches it:
-/** Direction to the sun in the sky image (48° up); the shadow-casting light shines from here. */
-const SUN_DIR = new THREE.Vector3(0.554, 0.742, 0.378).normalize();
 /** Average linear radiance of the sky just above the horizon; used as the haze colour so distance fades into the sky. */
 const HORIZON = new THREE.Color().setRGB(0.45, 0.48, 0.59, THREE.LinearSRGBColorSpace);
 
@@ -304,6 +305,7 @@ function World({ track, layout }: { track: Track; layout: Layout }) {
             <Models layout={layout} />
           </Suspense>
           <Petals />
+          {layout.trees && <SunShafts spots={layout.trees} />}
         </>
       ) : (
         <>
@@ -388,6 +390,7 @@ export default function Game() {
   const timeEl = useRef<HTMLDivElement>(null);
   const tacho = useRef<TachoHandle>(null);
   const offRoadEl = useRef<HTMLDivElement>(null);
+  const minimap = useRef<MinimapHandle>(null);
 
   const restart = useCallback(() => {
     skids.current?.clear();
@@ -469,6 +472,7 @@ export default function Game() {
     }
     const [gear, rpm] = gearDisplay(gears, startedRef.current);
     tacho.current?.update(s.car.speed, gear, rpm);
+    minimap.current?.update(s.car, s.bots);
     if (offRoadEl.current) offRoadEl.current.style.opacity = s.car.offRoad ? "1" : "0";
     if (s.lapTicks !== null && lapTicks === null) {
       setLapTicks(s.lapTicks);
@@ -537,6 +541,7 @@ export default function Game() {
           </div>
         </div>
       </div>
+      <Minimap ref={minimap} track={track} bots={engine.sim.state.bots.length} />
       <div className={styles.lights} ref={lightsEl} />
       {/* The cockpit has its own dials on the dash */}
       {VIEWS[viewIdx] !== "Cockpit" && <Tacho ref={tacho} />}

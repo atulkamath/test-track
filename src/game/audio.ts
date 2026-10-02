@@ -1,6 +1,6 @@
 // Procedural sound, all synthesized with Web Audio (no audio files):
 // a four-stroke engine model for the player and for each AI car (with distance, panning and Doppler so you
-// hear them go past), tyre squeal, brake screech, wind, gear-change clunk and crowd.
+// hear them go past), tyre scrub and squeal, brake rumble, tunnel echo, wind, gear-change clunk and crowd.
 // Created on the first key press, because browsers only allow audio after a user gesture.
 
 export interface OtherCar {
@@ -23,6 +23,8 @@ export interface SoundFrame {
   slip: number;
   /** 0..1 how many fans are close by and how excited they are. */
   crowd: number;
+  /** 0..1 how enclosed the car is (1 = in a tunnel): engine and tyre noise echo off the walls. */
+  tunnel: number;
   braking: boolean;
   others: OtherCar[];
 }
@@ -189,8 +191,9 @@ export class Sound {
   private crowdFilter!: BiquadFilterNode;
   private shiftGain!: GainNode;
   private brakeGain!: GainNode;
-  private brakeOsc!: OscillatorNode;
-  private brakeOsc2!: OscillatorNode;
+  private scrubGain!: GainNode;
+  private squealBands: BiquadFilterNode[] = [];
+  private tunnelSend!: GainNode;
   private noise!: AudioBufferSourceNode;
   private wasThrottle = false;
   private idlePhase = 0;
@@ -212,6 +215,23 @@ export class Sound {
     limiter.ratio.value = 6;
     this.master.connect(limiter).connect(ctx.destination);
 
+    // Tunnel: everything is also fed through a short, dull, repeating echo, as off concrete walls close by.
+    this.tunnelSend = ctx.createGain();
+    this.tunnelSend.gain.value = 0;
+    const tap1 = ctx.createDelay(0.5);
+    tap1.delayTime.value = 0.043;
+    const tap2 = ctx.createDelay(0.5);
+    tap2.delayTime.value = 0.071;
+    const dull = ctx.createBiquadFilter();
+    dull.type = "lowpass";
+    dull.frequency.value = 2400;
+    const feedback = ctx.createGain();
+    feedback.gain.value = 0.55;
+    this.master.connect(this.tunnelSend).connect(tap1).connect(tap2).connect(dull);
+    dull.connect(feedback).connect(tap1);
+    tap1.connect(limiter);
+    dull.connect(limiter);
+
     // Shared noise source for exhausts, tyres, wind and crowd.
     const noise = ctx.createBufferSource();
     noise.buffer = noiseBuffer(ctx);
@@ -224,50 +244,36 @@ export class Sound {
     this.shiftGain.connect(this.master);
     this.engine = new EngineVoice(ctx, noise, this.shiftGain, 1);
 
-    // Brake screech: two detuned squares warbling around 2 kHz, band-passed, over a bed of hiss.
+    // Brakes: no screech (road cars don't), just the low rumble of tyres loaded up under braking.
     this.brakeGain = ctx.createGain();
     this.brakeGain.gain.value = 0;
-    this.brakeGain.connect(this.master);
-    const screechBand = ctx.createBiquadFilter();
-    screechBand.type = "bandpass";
-    screechBand.frequency.value = 2200;
-    screechBand.Q.value = 2.5;
-    screechBand.connect(this.brakeGain);
-    const vibrato = ctx.createOscillator();
-    vibrato.frequency.value = 17;
-    const vibratoDepth = ctx.createGain();
-    vibratoDepth.gain.value = 90;
-    vibrato.connect(vibratoDepth);
-    vibrato.start();
-    this.brakeOsc = ctx.createOscillator();
-    this.brakeOsc2 = ctx.createOscillator();
-    for (const [o, f] of [
-      [this.brakeOsc, 1900],
-      [this.brakeOsc2, 2430],
-    ] as const) {
-      o.type = "square";
-      o.frequency.value = f;
-      vibratoDepth.connect(o.frequency);
-      const lvl = ctx.createGain();
-      lvl.gain.value = 0.5;
-      o.connect(lvl).connect(screechBand);
-      o.start();
-    }
-    const hiss = ctx.createBiquadFilter();
-    hiss.type = "bandpass";
-    hiss.frequency.value = 2800;
-    hiss.Q.value = 1.5;
-    const hissLvl = ctx.createGain();
-    hissLvl.gain.value = 0.6;
-    noise.connect(hiss).connect(hissLvl).connect(this.brakeGain);
+    const rumble = ctx.createBiquadFilter();
+    rumble.type = "lowpass";
+    rumble.frequency.value = 420;
+    noise.connect(rumble).connect(this.brakeGain).connect(this.master);
 
-    const tyreFilter = ctx.createBiquadFilter();
-    tyreFilter.type = "bandpass";
-    tyreFilter.frequency.value = 1500;
-    tyreFilter.Q.value = 8;
+    // Tyres, two layers. Scrub: a broad hiss as the tread starts to slide. Squeal: two narrow, slightly
+    // wandering bands of noise (a howl, not a pure tone) that only come in when the tyre is really sliding.
+    this.scrubGain = ctx.createGain();
+    this.scrubGain.gain.value = 0;
+    const scrub = ctx.createBiquadFilter();
+    scrub.type = "bandpass";
+    scrub.frequency.value = 650;
+    scrub.Q.value = 0.9;
+    noise.connect(scrub).connect(this.scrubGain).connect(this.master);
     this.tyreGain = ctx.createGain();
     this.tyreGain.gain.value = 0;
-    noise.connect(tyreFilter).connect(this.tyreGain).connect(this.master);
+    this.tyreGain.connect(this.master);
+    this.squealBands = [880, 1340].map((f, i) => {
+      const band = ctx.createBiquadFilter();
+      band.type = "bandpass";
+      band.frequency.value = f;
+      band.Q.value = 18;
+      const lvl = ctx.createGain();
+      lvl.gain.value = i === 0 ? 1 : 0.55;
+      noise.connect(band).connect(lvl).connect(this.tyreGain);
+      return band;
+    });
 
     const windFilter = ctx.createBiquadFilter();
     windFilter.type = "bandpass";
@@ -310,15 +316,20 @@ export class Sound {
     while (this.others.length < f.others.length) this.others.push(new PassingCar(ctx, this.noise, this.master, 0.7 + this.others.length * 0.25));
     f.others.forEach((c, i) => this.others[i].set(c));
 
-    const slip = Math.min(Math.max((f.slip - 2.5) / 6, 0), 1);
-    this.tyreGain.gain.setTargetAtTime(slip * 0.18, t, 0.05);
     const s = Math.min(Math.abs(f.speed) / 64, 1);
+    // Scrub builds from a gentle slide; the squeal needs a real one (or the wheels close to locking under brakes).
+    const slip = Math.min(Math.max((f.slip - 1.5) / 7, 0), 1);
+    const locking = f.braking && Math.abs(f.speed) > 22 ? 0.45 : 0;
+    const squeal = Math.max(Math.pow(Math.max(slip - 0.3, 0) / 0.7, 1.5), locking);
+    this.scrubGain.gain.setTargetAtTime(Math.min(slip * 2.5, 1) * 0.11, t, 0.08);
+    this.tyreGain.gain.setTargetAtTime(squeal * 0.85, t, squeal > 0 ? 0.07 : 0.15);
+    // The howl drops in pitch as the slide gets bigger, and never sits perfectly still.
+    const wander = 18 * Math.sin(this.idlePhase * 2.1) + 11 * Math.sin(this.idlePhase * 5.3);
+    this.squealBands.forEach((band, i) => band.frequency.setTargetAtTime((i === 0 ? 930 : 1400) - slip * 130 + wander * (i + 1), t, 0.05));
     this.windGain.gain.setTargetAtTime(s * s * 0.12, t, 0.1);
-    // Screech whenever the brakes bite above ~18 km/h; louder and higher at speed.
-    const screech = f.braking ? Math.min(Math.max((Math.abs(f.speed) - 5) / 20, 0), 1) : 0;
-    this.brakeGain.gain.setTargetAtTime(screech * 0.2, t, screech > 0 ? 0.02 : 0.12);
-    this.brakeOsc.frequency.setTargetAtTime(1600 + Math.abs(f.speed) * 12, t, 0.08);
-    this.brakeOsc2.frequency.setTargetAtTime(2050 + Math.abs(f.speed) * 15, t, 0.08);
+    const brake = f.braking ? Math.min(Math.max((Math.abs(f.speed) - 4) / 35, 0), 1) : 0;
+    this.brakeGain.gain.setTargetAtTime(brake * 0.16, t, 0.08);
+    this.tunnelSend.gain.setTargetAtTime(f.tunnel * 0.75, t, 0.12);
     this.crowdGain.gain.setTargetAtTime(0.015 + f.crowd * 0.2, t, 0.3);
     this.crowdFilter.frequency.setTargetAtTime(500 + f.crowd * 500, t, 0.3);
   }
