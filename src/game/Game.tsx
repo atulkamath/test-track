@@ -334,8 +334,7 @@ function Driver({
       rpm: started.current ? gears.rpm : 900,
       throttle: started.current && !engine.finished && (input.current & UP) !== 0,
       speed,
-      // Sideways speed, or how far past the grip limit the tyres are, whichever is louder.
-      slip: sim.offRoad ? 0 : Math.max(slip, sim.slide * 7),
+      slip: sim.offRoad ? 0 : slip,
       crowd: cn.level,
       tunnel: layout.tunnels?.some((t) => engine.sim.state.trackIndex[0] >= t.from && engine.sim.state.trackIndex[0] < t.to) ? 1 : 0,
       braking,

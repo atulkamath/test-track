@@ -10,7 +10,7 @@ export const TICK_RATE = 60;
 /** Replays longer than this are rejected (10 minutes). */
 export const MAX_TICKS = TICK_RATE * 60 * 10;
 /** Bump whenever sim rules change: old runs can't be replayed faithfully. */
-export const RUN_VERSION = 8 as const;
+export const RUN_VERSION = 7 as const;
 /** Race distance. */
 export const LAPS = 3;
 
@@ -82,7 +82,7 @@ function carOnGrid(track: Track, k: number): CarState {
   const p = track.points[index];
   const t = track.tangents[index];
   const off = side * GRID_SIDE;
-  return { x: p.x - t.z * off, z: p.z + t.x * off, vx: 0, vz: 0, heading: headingFromVector(t.x, t.z), speed: 0, steer: 0, turnRem: 0, slide: 0, offRoad: false };
+  return { x: p.x - t.z * off, z: p.z + t.x * off, vx: 0, vz: 0, heading: headingFromVector(t.x, t.z), speed: 0, steer: 0, offRoad: false };
 }
 
 export function createSim(seed: string, track: Track = generateTrack(seed)): Sim {
