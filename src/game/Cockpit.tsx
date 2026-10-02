@@ -12,6 +12,7 @@
 import { useGLTF } from "@react-three/drei";
 import { forwardRef, useImperativeHandle, useMemo, useRef } from "react";
 import * as THREE from "three";
+import { NIGHT } from "./materials";
 import { bonePosition, createDriver, DRIVER_SCALE, DRIVER_URL, reach, type DriverRig } from "./driverRig";
 
 export const EYE = new THREE.Vector3(0.31, 0.98, -0.05);
@@ -79,13 +80,13 @@ function airbagFabric() {
   shade.addColorStop(1, "rgba(110,100,80,0.22)");
   ctx.fillStyle = shade;
   ctx.fillRect(512, 0, 512, 512);
-  ctx.fillStyle = "#23252b";
+  ctx.fillStyle = "#0c0d10";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.font = "italic 25px sans-serif";
+  ctx.font = "italic bold 27px sans-serif";
   ctx.fillText("Airbag designed by", cx, cy - 30);
-  ctx.font = "bold 34px sans-serif";
-  ctx.fillText("Richard Hammond", cx, cy + 10);
+  ctx.font = "bold 38px sans-serif";
+  ctx.fillText("Richard Hammond", cx, cy + 12);
   texture.needsUpdate = true;
   return texture;
 }
@@ -347,6 +348,8 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
         const out = t < 0 ? 0 : Math.min(t / BAG_OUT, 1);
         const sag = t < BAG_HOLD ? 0 : THREE.MathUtils.smoothstep(t, BAG_HOLD, BAG_GONE);
         bag.current.visible = t >= 0;
+        // Dimmer after dark, so it doesn't glow like a lamp.
+        (bag.current.material as THREE.MeshBasicMaterial).color.setScalar(0.7 - 0.42 * NIGHT.value);
         bag.current.position.lerpVectors(WHEEL_POS, BAG_AT, out).addScaledVector(DOWN, sag * 0.16);
         const wobble = 1 + 0.07 * Math.sin(t * 38) * Math.exp(-t * 5);
         const full = Math.max(out, 0.02) * wobble;
@@ -463,7 +466,8 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
       {/* Airbag (hidden until a big crash) */}
       <mesh ref={bag} visible={false}>
         <sphereGeometry args={[BAG_RADIUS, 40, 28]} />
-        <meshStandardMaterial map={fabric} roughness={0.95} emissive="#ffffff" emissiveMap={fabric} emissiveIntensity={0.25} />
+        {/* Unlit and held below white: lit by the sun and the cabin lamp at arm's length it burnt out and hid the print. */}
+        <meshBasicMaterial map={fabric} color="#b4b2ac" />
       </mesh>
 
       {/* The driver's own body: suited arms and gloved hands (head left out, the camera is inside it) */}
