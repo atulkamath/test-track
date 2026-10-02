@@ -242,7 +242,7 @@ export const SkidMarks = forwardRef<SkidHandle>(function SkidMarks(_, ref) {
       const m = mesh.current;
       if (!m) return;
       const side = car.vx * COS[car.heading] - car.vz * SIN[car.heading];
-      const sliding = !car.offRoad && (Math.abs(side) > 3.2 || (braking && car.speed > 22));
+      const sliding = !car.offRoad && (Math.abs(side) > 3.2 || car.slide > 0.7 || (braking && car.speed > 22));
       if (!sliding) {
         last.current.set(key, null);
         return;

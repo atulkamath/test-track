@@ -3,7 +3,7 @@ import { createSim, replay, step, LEFT, RIGHT, STREET_SEED, STREET_WALL_GAP, UP,
 import { headingFromVector } from "../src/sim/trig";
 import { collideCars } from "../src/sim/collide";
 
-const car = (x: number, z: number, vx: number, vz: number): CarState => ({ x, z, vx, vz, heading: 1024, speed: 0, steer: 0, offRoad: false });
+const car = (x: number, z: number, vx: number, vz: number): CarState => ({ x, z, vx, vz, heading: 1024, speed: 0, turnRem: 0, slide: 0, steer: 0, offRoad: false });
 
 describe("collisions", () => {
   it("track has cones and tyre walls", () => {
