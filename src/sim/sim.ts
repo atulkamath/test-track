@@ -183,7 +183,7 @@ export function step(sim: Sim, input: number): void {
 }
 
 /** How hard the player's car slows after the flag (m/s^2): from racing speed to a stop in 4-5 seconds. */
-const COOLDOWN_DECEL = 7;
+const COOLDOWN_DECEL = 9;
 
 /**
  * Display only, after the player has finished: the AI cars keep racing, and the player's car rolls on over
