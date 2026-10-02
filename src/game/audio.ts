@@ -25,6 +25,8 @@ export interface SoundFrame {
   crowd: number;
   /** 0..1 how enclosed the car is (1 = in a tunnel): engine and tyre noise echo off the walls. */
   tunnel: number;
+  /** Engine cut out (after a big crash): silence it. */
+  dead?: boolean;
   braking: boolean;
   others: OtherCar[];
 }
@@ -306,7 +308,8 @@ export class Sound {
     this.idlePhase += 0.11;
     const idling = f.rpm < IDLE_RPM + 400 && !f.throttle;
     const rpm = idling ? f.rpm + 28 * Math.sin(this.idlePhase) + 14 * Math.sin(this.idlePhase * 2.7) : f.rpm;
-    this.engine.set(rpm, f.throttle ? 1 : 0.12, f.throttle ? 0.3 : 0.17);
+    if (f.dead) this.engine.set(300, 0, 0);
+    else this.engine.set(rpm, f.throttle ? 1 : 0.12, f.throttle ? 0.3 : 0.17);
 
     // Lifting off at high revs: a few pops from the exhaust.
     if (this.wasThrottle && !f.throttle && f.rpm > 5200) this.pops(3 + Math.floor(Math.random() * 3));

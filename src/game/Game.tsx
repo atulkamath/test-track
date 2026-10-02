@@ -254,6 +254,8 @@ function Driver({
   input,
   started,
   onTick,
+  crashed,
+  onCrash,
   skids,
   layout,
   view,
@@ -264,6 +266,8 @@ function Driver({
   input: React.RefObject<number>;
   started: React.RefObject<boolean>;
   onTick: () => void;
+  crashed: React.RefObject<boolean>;
+  onCrash: () => void;
   skids: React.RefObject<SkidHandle | null>;
   layout: Layout;
   view: React.RefObject<number>;
@@ -286,7 +290,8 @@ function Driver({
   const headlights = useMemo(() => makeHeadlights(), []);
 
   useFrame(({ camera }, delta) => {
-    if (started.current) engine.advance(delta, () => input.current);
+    // After the airbag has gone off the engine is dead: the car brakes to a stop and takes no more input.
+    if (started.current) engine.advance(delta, () => (crashed.current ? (engine.sim.state.car.speed > 0.5 ? DOWN : 0) : input.current));
     onTick();
     const p = engine.pose();
     const speed = engine.sim.state.car.speed;
@@ -342,7 +347,10 @@ function Driver({
       const car = engine.sim.state.bots.some((b) => (b.x - sim.x) ** 2 + (b.z - sim.z) ** 2 < 4.8 * 4.8);
       sound.current?.impact(car ? "car" : "wall", Math.min(1, jolt / 12));
       // Easter egg: a crash from 160 km/h or more, seen from the driver's seat, sets off the airbag.
-      if (viewName === "Cockpit" && Math.hypot(hit.vx, hit.vz) * 3.6 >= 160 && cockpit.current?.airbag()) sound.current?.airbag();
+      if (viewName === "Cockpit" && Math.hypot(hit.vx, hit.vz) * 3.6 >= 160 && !crashed.current) {
+        sound.current?.airbag();
+        onCrash();
+      }
       hit.cool = 0.22;
     }
     hit.vx = sim.vx;
@@ -352,6 +360,7 @@ function Driver({
     const others = hearOtherCars(engine, botGears, lastGaps.current, p, delta);
     sound.current?.update({
       // In a burnout the wheels spin free of the road: the engine screams near the limiter whatever the speed.
+      dead: crashed.current,
       rpm: !started.current ? 900 : sim.burnout ? 6400 + 350 * Math.sin(performance.now() / 45) : gears.rpm,
       throttle: started.current && !engine.finished && (input.current & UP) !== 0,
       speed,
@@ -515,7 +524,17 @@ export default function Game() {
   const offRoadEl = useRef<HTMLDivElement>(null);
   const minimap = useRef<MinimapHandle>(null);
 
+  // Airbag easter egg: the bag fills the screen, the engine dies, and the only way on is to restart.
+  const crashedRef = useRef(false);
+  const [airbag, setAirbag] = useState(false);
+  const crash = useCallback(() => {
+    crashedRef.current = true;
+    setAirbag(true);
+  }, []);
+
   const restart = useCallback(() => {
+    crashedRef.current = false;
+    setAirbag(false);
     skids.current?.clear();
     resetGears(gears);
     setEngine(new Engine(track));
@@ -623,7 +642,7 @@ export default function Game() {
         camera={{ fov: 58, near: 0.1, far: 3200 }}
       >
         <World track={track} layout={layout} />
-        <Driver engine={engine} input={input} started={startedRef} onTick={onTick} skids={skids} layout={layout} view={view} sound={sound} gears={gears} />
+        <Driver engine={engine} input={input} started={startedRef} onTick={onTick} crashed={crashedRef} onCrash={crash} skids={skids} layout={layout} view={view} sound={sound} gears={gears} />
         <Traffic engine={engine} skids={skids} />
         <Obstacles engine={engine} />
         <SkidMarks ref={skids} />
@@ -688,6 +707,17 @@ export default function Game() {
       )}
       {/* Credit on the start screen (the cockpit carries a maker's badge on its dash) */}
       {!started && lapTicks === null && <div className={styles.byline}>Game by Atul K</div>}
+      {airbag && (
+        <div className={styles.airbagWrap}>
+          <div className={styles.airbag}>
+            <span>Engineered by</span>
+            <strong>Richard Hammond</strong>
+          </div>
+          <div className={styles.airbagPrompt}>
+            Engine dead · <button onClick={restart}>Press R to restart</button>
+          </div>
+        </div>
+      )}
       {viewName && <div className={styles.toast}>{viewName}</div>}
       <div className={styles.status}>
         <button onClick={cycleView} aria-label="Change camera">

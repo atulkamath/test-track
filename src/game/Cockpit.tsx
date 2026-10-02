@@ -32,8 +32,6 @@ const WRIST = 0.085;
 
 export interface CockpitHandle {
   update(frame: { steer: number; gear: number; speedKmh: number; rpm: number; delta: number }): void;
-  /** Fire the airbag (a big crash). Returns false if it is already out. */
-  airbag(): boolean;
 }
 
 /** Maker's badge for the dashboard: pale lettering, like a plate fixed to the passenger side. */
@@ -53,31 +51,6 @@ function badgeTexture() {
   return texture;
 }
 
-/** What the airbag says when it goes off. */
-function airbagTexture() {
-  const { canvas, texture } = canvasTexture(512, 256);
-  const ctx = canvas.getContext("2d")!;
-  ctx.fillStyle = "#eeece6";
-  ctx.fillRect(0, 0, 512, 256);
-  ctx.strokeStyle = "rgba(60, 60, 70, 0.35)";
-  ctx.setLineDash([10, 8]);
-  ctx.lineWidth = 3;
-  ctx.strokeRect(14, 14, 484, 228);
-  ctx.fillStyle = "#2a2c33";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.font = "italic 34px sans-serif";
-  ctx.fillText("Engineered by", 256, 92);
-  ctx.font = "bold 54px sans-serif";
-  ctx.fillText("Richard Hammond", 256, 152);
-  texture.needsUpdate = true;
-  return texture;
-}
-
-/** Seconds: bang out, hang there, sag away. */
-const BAG_OUT = 0.07;
-const BAG_HOLD = 3;
-const BAG_GONE = 5;
 
 
 /** Body (not head) of the driver, sized and placed so his eyes are where the camera is. */
@@ -229,9 +202,7 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
     }
     return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts, true), 120, 0.021, 12, true);
   }, []);
-  const state = useRef({ gear: 1, steer: 0, shiftT: 1, lastDash: "", leverFrom: [0, 0] as [number, number], bagT: -1 });
-  const bag = useRef<THREE.Group>(null);
-  const bagLabel = useMemo(() => airbagTexture(), []);
+  const state = useRef({ gear: 1, steer: 0, shiftT: 1, lastDash: "", leverFrom: [0, 0] as [number, number] });
   const badge = useMemo(() => badgeTexture(), []);
   const tmp = useMemo(
     () => ({
@@ -301,26 +272,11 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
         reach(driver, side, tmp.wrist, tmp.axis, tmp.palm);
       }
 
-      // Airbag: out in an instant, then slowly deflating.
-      if (bag.current) {
-        if (s.bagT >= 0) s.bagT += delta;
-        if (s.bagT > BAG_GONE) s.bagT = -1;
-        const size = s.bagT < 0 ? 0 : s.bagT < BAG_OUT ? s.bagT / BAG_OUT : s.bagT < BAG_HOLD ? 1 : 1 - (s.bagT - BAG_HOLD) / (BAG_GONE - BAG_HOLD);
-        bag.current.visible = size > 0;
-        // A touch of wobble just after it fires.
-        bag.current.scale.setScalar(Math.max(size, 0.001) * (1 + 0.06 * Math.sin(s.bagT * 40) * Math.exp(-s.bagT * 6)));
-      }
-
       const key = `${gear}|${Math.round(speedKmh / 2)}|${Math.round(rpm / 100)}`;
       if (key !== s.lastDash) {
         drawCluster(cluster.canvas, cluster.texture, gear, speedKmh, rpm);
         s.lastDash = key;
       }
-    },
-    airbag() {
-      if (state.current.bagT >= 0) return false;
-      state.current.bagT = 0;
-      return true;
     },
   }));
 
@@ -415,18 +371,6 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
         </group>
       </group>
 
-      {/* Airbag: a pillow bursting out of the wheel hub, with a few words on it */}
-      <group ref={bag} position={[WHEEL_POS.x, WHEEL_POS.y + 0.09, WHEEL_POS.z - 0.07]} visible={false}>
-        <mesh scale={[1, 0.85, 0.5]}>
-          <sphereGeometry args={[0.25, 24, 18]} />
-          <meshStandardMaterial color="#eeece6" roughness={0.95} />
-        </mesh>
-        <mesh position={[0, 0.02, -0.128]} rotation={[0.3, Math.PI, 0]}>
-          <planeGeometry args={[0.24, 0.12]} />
-          <meshBasicMaterial map={bagLabel} />
-        </mesh>
-      </group>
-
       {/* The driver's own body: suited arms and gloved hands (head left out, the camera is inside it) */}
       <primitive object={driver.root} />
 
@@ -441,14 +385,14 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
         {chrome}
       </mesh>
       {[0.1, -0.08].map((x) => (
-        <mesh key={x} position={[x, 0.7, 0.438]}>
+        <mesh key={x} position={[x, 0.66, 0.438]}>
           <torusGeometry args={[0.03, 0.006, 8, 24]} />
           {chrome}
         </mesh>
       ))}
-      {/* Maker's badge on the passenger side of the dash */}
-      <mesh position={[-0.27, 0.69, 0.4365]} rotation={[0, Math.PI, 0]}>
-        <planeGeometry args={[0.3, 0.056]} />
+      {/* Maker's badge in the middle of the dash, just right of the wheel: far enough in to be on screen whole */}
+      <mesh position={[-0.03, 0.727, 0.4365]} rotation={[0, Math.PI, 0]}>
+        <planeGeometry args={[0.2, 0.0375]} />
         <meshBasicMaterial map={badge} transparent opacity={0.8} toneMapped={false} />
       </mesh>
       {/* Door panels */}
