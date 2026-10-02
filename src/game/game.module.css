@@ -396,3 +396,34 @@
   bottom: 56px;
   pointer-events: none;
 }
+
+.credit {
+  position: absolute;
+  top: 150px;
+  right: 20px;
+  padding: 4px 12px;
+  border-right: 4px solid #f2c230;
+  background: rgba(8, 10, 16, 0.55);
+  font-family: var(--font-exo), system-ui, sans-serif;
+  font-style: italic;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.06em;
+  pointer-events: none;
+}
+
+.byline {
+  position: absolute;
+  bottom: 11%;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-exo), system-ui, sans-serif;
+  font-style: italic;
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #f2c230;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
+  pointer-events: none;
+}

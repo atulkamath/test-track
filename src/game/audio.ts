@@ -403,6 +403,26 @@ export class Sound {
     }
   }
 
+  /** Airbag: a sharp bang, then gas hissing out. */
+  airbag() {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    for (const [freq, gain, decay] of [
+      [1800, 1.1, 0.09],
+      [5000, 0.25, 1.2],
+    ]) {
+      const f = ctx.createBiquadFilter();
+      f.type = "lowpass";
+      f.frequency.value = freq;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(gain, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + decay);
+      this.noise.connect(f).connect(g).connect(this.master);
+      setTimeout(() => f.disconnect(), decay * 1000 + 200);
+    }
+  }
+
   /** Gear change: the engine note cuts briefly and the gearbox clunks. */
   shift() {
     const ctx = this.ctx;

@@ -10,6 +10,7 @@
 // well forward of the headrest so the low roof stays out of shot, and the wheel is small and low enough that
 // the dials show between its hub and rim.
 import { useGLTF } from "@react-three/drei";
+import { useFrame } from "@react-three/fiber";
 import { forwardRef, useImperativeHandle, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { bonePosition, createDriver, DRIVER_SCALE, DRIVER_URL, reach, type DriverRig } from "./driverRig";
@@ -32,7 +33,98 @@ const WRIST = 0.085;
 
 export interface CockpitHandle {
   update(frame: { steer: number; gear: number; speedKmh: number; rpm: number; delta: number }): void;
+  /** Fire the airbag (a big crash). Returns false if it is already out. */
+  airbag(): boolean;
 }
+
+// Left door mirror: a small pod at the foot of the windscreen pillar, where the driver can actually see it,
+// showing a live view down the left side of the car (the scene drawn a second time from the mirror, small).
+const MIRROR_POS = new THREE.Vector3(0.69, 0.835, 0.47);
+const MIRROR_SIZE: [number, number] = [0.17, 0.09];
+/** The glass is turned in toward the driver. */
+const MIRROR_YAW = Math.PI + 0.42;
+/** Which way the reflected view looks, in the car's frame: back, a little out to the left and down. */
+const MIRROR_LOOK = new THREE.Vector3(0.2, -0.07, -1);
+const MIRROR_PIXELS: [number, number] = [384, 200];
+
+function isShown(o: THREE.Object3D | null): boolean {
+  for (let p = o; p; p = p.parent) if (!p.visible) return false;
+  return o !== null;
+}
+
+/** Draw the scene from the mirror into its texture. The glass itself is hidden meanwhile (it can't show itself). */
+function renderMirror(gl: THREE.WebGLRenderer, scene: THREE.Scene, glass: THREE.Mesh, camera: THREE.PerspectiveCamera, target: THREE.WebGLRenderTarget) {
+  const car = glass.parent!;
+  car.updateWorldMatrix(true, false);
+  camera.position.copy(MIRROR_POS).add(new THREE.Vector3(0.12, 0.03, -0.1));
+  car.localToWorld(camera.position);
+  camera.lookAt(car.localToWorld(MIRROR_POS.clone().addScaledVector(MIRROR_LOOK, 30)));
+  camera.updateMatrixWorld();
+  const shadows = gl.shadowMap.autoUpdate;
+  gl.shadowMap.autoUpdate = false; // reuse this frame's shadows
+  glass.visible = false;
+  gl.setRenderTarget(target);
+  gl.clear();
+  gl.render(scene, camera);
+  gl.setRenderTarget(null);
+  glass.visible = true;
+  gl.shadowMap.autoUpdate = shadows;
+}
+
+function Mirror() {
+  const glass = useRef<THREE.Mesh>(null);
+  const { target, camera } = useMemo(() => {
+    const target = new THREE.WebGLRenderTarget(MIRROR_PIXELS[0], MIRROR_PIXELS[1], { type: THREE.HalfFloatType });
+    const camera = new THREE.PerspectiveCamera(24, MIRROR_SIZE[0] / MIRROR_SIZE[1], 0.3, 1500);
+    return { target, camera };
+  }, []);
+  const tick = useRef(0);
+  useFrame(({ gl, scene }) => {
+    // Only while the driver's view is showing, and every other frame: it is a small picture.
+    if (!glass.current || !isShown(glass.current) || tick.current++ % 2) return;
+    renderMirror(gl, scene, glass.current, camera, target);
+  });
+  return (
+    <group position={MIRROR_POS} rotation={[0, MIRROR_YAW, 0]}>
+      {/* Housing behind the glass */}
+      <mesh position={[0, 0, -0.03]}>
+        <boxGeometry args={[MIRROR_SIZE[0] + 0.02, MIRROR_SIZE[1] + 0.02, 0.05]} />
+        <meshStandardMaterial color="#15171a" roughness={0.5} />
+      </mesh>
+      {/* A mirror shows left and right swapped: flip the picture. */}
+      <mesh ref={glass} scale={[-1, 1, 1]}>
+        <planeGeometry args={MIRROR_SIZE} />
+        <meshBasicMaterial map={target.texture} side={THREE.DoubleSide} />
+      </mesh>
+    </group>
+  );
+}
+
+/** What the airbag says when it goes off. */
+function airbagTexture() {
+  const { canvas, texture } = canvasTexture(512, 256);
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "#eeece6";
+  ctx.fillRect(0, 0, 512, 256);
+  ctx.strokeStyle = "rgba(60, 60, 70, 0.35)";
+  ctx.setLineDash([10, 8]);
+  ctx.lineWidth = 3;
+  ctx.strokeRect(14, 14, 484, 228);
+  ctx.fillStyle = "#2a2c33";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = "italic 34px sans-serif";
+  ctx.fillText("Engineered by", 256, 92);
+  ctx.font = "bold 54px sans-serif";
+  ctx.fillText("Richard Hammond", 256, 152);
+  texture.needsUpdate = true;
+  return texture;
+}
+
+/** Seconds: bang out, hang there, sag away. */
+const BAG_OUT = 0.07;
+const BAG_HOLD = 3;
+const BAG_GONE = 5;
 
 
 /** Body (not head) of the driver, sized and placed so his eyes are where the camera is. */
@@ -181,7 +273,9 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
     }
     return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts, true), 120, 0.021, 12, true);
   }, []);
-  const state = useRef({ gear: 1, steer: 0, shiftT: 1, lastDash: "", leverFrom: [0, 0] as [number, number] });
+  const state = useRef({ gear: 1, steer: 0, shiftT: 1, lastDash: "", leverFrom: [0, 0] as [number, number], bagT: -1 });
+  const bag = useRef<THREE.Group>(null);
+  const bagLabel = useMemo(() => airbagTexture(), []);
   const tmp = useMemo(
     () => ({
       pos: new THREE.Vector3(),
@@ -250,11 +344,26 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
         reach(driver, side, tmp.wrist, tmp.axis, tmp.palm);
       }
 
+      // Airbag: out in an instant, then slowly deflating.
+      if (bag.current) {
+        if (s.bagT >= 0) s.bagT += delta;
+        if (s.bagT > BAG_GONE) s.bagT = -1;
+        const size = s.bagT < 0 ? 0 : s.bagT < BAG_OUT ? s.bagT / BAG_OUT : s.bagT < BAG_HOLD ? 1 : 1 - (s.bagT - BAG_HOLD) / (BAG_GONE - BAG_HOLD);
+        bag.current.visible = size > 0;
+        // A touch of wobble just after it fires.
+        bag.current.scale.setScalar(Math.max(size, 0.001) * (1 + 0.06 * Math.sin(s.bagT * 40) * Math.exp(-s.bagT * 6)));
+      }
+
       const key = `${gear}|${Math.round(speedKmh / 2)}|${Math.round(rpm / 100)}`;
       if (key !== s.lastDash) {
         drawCluster(cluster.canvas, cluster.texture, gear, speedKmh, rpm);
         s.lastDash = key;
       }
+    },
+    airbag() {
+      if (state.current.bagT >= 0) return false;
+      state.current.bagT = 0;
+      return true;
     },
   }));
 
@@ -347,6 +456,20 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
           <object3D ref={anchorL} position={[RIM * Math.cos(GRIP_ANGLE), RIM * Math.sin(GRIP_ANGLE), 0]} rotation={[0, 0, GRIP_ANGLE]} />
           <object3D ref={anchorR} position={[-RIM * Math.cos(GRIP_ANGLE), RIM * Math.sin(GRIP_ANGLE), 0]} rotation={[0, 0, -GRIP_ANGLE]} />
         </group>
+      </group>
+
+      <Mirror />
+
+      {/* Airbag: a pillow bursting out of the wheel hub, with a few words on it */}
+      <group ref={bag} position={[WHEEL_POS.x, WHEEL_POS.y + 0.09, WHEEL_POS.z - 0.07]} visible={false}>
+        <mesh scale={[1, 0.85, 0.5]}>
+          <sphereGeometry args={[0.25, 24, 18]} />
+          <meshStandardMaterial color="#eeece6" roughness={0.95} />
+        </mesh>
+        <mesh position={[0, 0.02, -0.128]} rotation={[0.3, Math.PI, 0]}>
+          <planeGeometry args={[0.24, 0.12]} />
+          <meshBasicMaterial map={bagLabel} />
+        </mesh>
       </group>
 
       {/* The driver's own body: suited arms and gloved hands (head left out, the camera is inside it) */}

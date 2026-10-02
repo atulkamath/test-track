@@ -341,6 +341,8 @@ function Driver({
     if (started.current && jolt > 1.5 && jolt / Math.max(delta, 1 / 60) > 75 && hit.cool <= 0) {
       const car = engine.sim.state.bots.some((b) => (b.x - sim.x) ** 2 + (b.z - sim.z) ** 2 < 4.8 * 4.8);
       sound.current?.impact(car ? "car" : "wall", Math.min(1, jolt / 12));
+      // Easter egg: a crash from 160 km/h or more, seen from the driver's seat, sets off the airbag.
+      if (viewName === "Cockpit" && Math.hypot(hit.vx, hit.vz) * 3.6 >= 160 && cockpit.current?.airbag()) sound.current?.airbag();
       hit.cool = 0.22;
     }
     hit.vx = sim.vx;
@@ -683,6 +685,9 @@ export default function Game() {
           <div className={styles.hint}>Press ↑ / W to start · C camera · M sound</div>
         </>
       )}
+      {/* Credit: under the race panel in the cockpit view, and on the start screen */}
+      {VIEWS[viewIdx] === "Cockpit" && <div className={styles.credit}>Game by Atul K</div>}
+      {!started && lapTicks === null && <div className={styles.byline}>Game by Atul K</div>}
       {viewName && <div className={styles.toast}>{viewName}</div>}
       <div className={styles.status}>
         <button onClick={cycleView} aria-label="Change camera">
