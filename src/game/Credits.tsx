@@ -34,7 +34,6 @@ const ATTRIBUTED = [
   },
   { what: "Pagoda", title: "Pagoda", url: "https://poly.pizza/m/1zS7ucaAd4J", author: "Poly by Google", licence: BY3 },
   { what: "Stone lanterns", title: "Japanese Stone Lamp", url: "https://poly.pizza/m/5gZfOZIW92k", author: "Flopsi", licence: BY3 },
-  { what: "Paper lanterns", title: "red lantern", url: "https://poly.pizza/m/7PZhxLFiGc2", author: "Sophie Kim", licence: BY3 },
 ];
 
 export function Credits({ onClose }: { onClose: () => void }) {
