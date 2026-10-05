@@ -10,7 +10,7 @@ export const TICK_RATE = 60;
 /** Replays longer than this are rejected (10 minutes). */
 export const MAX_TICKS = TICK_RATE * 60 * 10;
 /** Bump whenever sim rules change: old runs can't be replayed faithfully. */
-export const RUN_VERSION = 9 as const;
+export const RUN_VERSION = 10 as const;
 /** Race distance. */
 export const LAPS = 3;
 

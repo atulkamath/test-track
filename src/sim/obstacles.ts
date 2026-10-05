@@ -1,11 +1,11 @@
 import type { Track } from "./track";
 
-/** Static round things beside the road. Cones get knocked over; tyre stacks are solid. */
+/** Static round things beside the road. Cones get knocked over; tyre stacks and torii pillars are solid. */
 export interface Obstacle {
   x: number;
   z: number;
   r: number;
-  kind: "cone" | "tyre";
+  kind: "cone" | "tyre" | "pillar";
 }
 
 const KERB = 1.2;
@@ -75,6 +75,45 @@ export function generateObstacles(track: Track): Obstacle[] {
     }
     out.push({ ...p, r: TYRE_R, kind: "tyre" });
     prev = p;
+  }
+  return out;
+}
+
+/** Height the street circuit's torii gates are drawn at (src/game/streetLayout.ts); their pillars below scale with it. */
+export const TORII_HEIGHT = 19;
+// Measured from public/models/jp/torii.glb (5.32 tall, drawn centred on its bounding box): at the ground each pillar
+// is 1.35-1.79 off centre and runs from 0.41 behind the gate's spot to 0.44 in front (its front face leans back as
+// it rises). A row of three overlapping circles covers that footprint to within ~0.15 m at the corners.
+const TORII_SCALE = TORII_HEIGHT / 5.32;
+const TORII_PILLAR_OFF = 1.57 * TORII_SCALE;
+const TORII_PILLAR_R = 0.25 * TORII_SCALE;
+const TORII_PILLAR_ALONG = [-0.23, 0.015, 0.26].map((a) => a * TORII_SCALE);
+
+/** Centreline samples where the street circuit has a torii gate over the road: every ~110 m up on the shrine hill. */
+export function toriiSamples(track: Track): number[] {
+  const out: number[] = [];
+  let last = -100;
+  for (let i = 0; i < track.points.length; i += 3) {
+    const p = track.points[i];
+    if (p.x <= 200 && p.z > 100 && i - last > 55) {
+      out.push(i);
+      last = i;
+    }
+  }
+  return out;
+}
+
+/** The torii pillars stand on the edges of the road: solid roadblocks to thread between. */
+export function generatePillars(track: Track): Obstacle[] {
+  const out: Obstacle[] = [];
+  for (const i of toriiSamples(track)) {
+    const p = track.points[i];
+    const t = track.tangents[i];
+    for (const s of [1, -1])
+      for (const along of TORII_PILLAR_ALONG) {
+        const off = s * TORII_PILLAR_OFF;
+        out.push({ x: p.x - t.z * off + t.x * along, z: p.z + t.x * off + t.z * along, r: TORII_PILLAR_R, kind: "pillar" });
+      }
   }
   return out;
 }

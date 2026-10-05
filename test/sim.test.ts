@@ -18,7 +18,7 @@ function scriptedInputs(ticks: number): number[] {
 
 describe("determinism", () => {
   it("same seed + inputs -> identical state every run", () => {
-    const run = { version: 9 as const, seed: "2026-10-01", inputs: scriptedInputs(1800) };
+    const run = { version: 10 as const, seed: "2026-10-01", inputs: scriptedInputs(1800) };
     const a = replay(run);
     const b = replay(run);
     expect(a).toEqual(b);
@@ -28,7 +28,7 @@ describe("determinism", () => {
     const inputs = scriptedInputs(900);
     const sim = createSim("2026-10-01");
     inputs.forEach((i) => step(sim, i));
-    expect(hashState(sim.state)).toBe(replay({ version: 9, seed: "2026-10-01", inputs }).hash);
+    expect(hashState(sim.state)).toBe(replay({ version: 10, seed: "2026-10-01", inputs }).hash);
   });
 
   it("different inputs -> different state", () => {
@@ -36,13 +36,13 @@ describe("determinism", () => {
     const changed = [...inputs];
     changed[10] ^= UP; // lift off the throttle for one tick early on
     const seed = "2026-10-01";
-    expect(replay({ version: 9, seed, inputs }).hash).not.toBe(replay({ version: 9, seed, inputs: changed }).hash);
+    expect(replay({ version: 10, seed, inputs }).hash).not.toBe(replay({ version: 10, seed, inputs: changed }).hash);
   });
 
   // Golden values: if these change, sim behaviour changed and every stored run is invalidated.
   // Update deliberately, never to "make the test pass".
   it("golden: scripted run", () => {
-    expect(replay({ version: 9, seed: "golden", inputs: scriptedInputs(1200) }).hash).toBe("7dfdcefb");
+    expect(replay({ version: 10, seed: "golden", inputs: scriptedInputs(1200) }).hash).toBe("7dfdcefb");
   });
 
   it("golden: autopilot lap", () => {
@@ -163,10 +163,18 @@ describe("racecraft", () => {
 describe("street circuit", () => {
   const track = generateTrack(STREET_SEED);
 
-  it("is a fixed layout with walls at the kerb and no run-off furniture", () => {
+  it("is a fixed layout with walls at the kerb, and torii pillars as its only obstacles", () => {
     expect(track.kind).toBe("street");
     expect(generateTrack(STREET_SEED).points).toEqual(track.points);
-    expect(track.obstacles.length).toBe(0);
+    expect(track.obstacles.length).toBeGreaterThan(0);
+    expect(track.obstacles.length % 2).toBe(0);
+    for (const o of track.obstacles) {
+      expect(o.kind).toBe("pillar");
+      // On the road's edge: it narrows the road, but leaves plenty of it.
+      const d = Math.min(...track.points.map((p) => Math.hypot(p.x - o.x, p.z - o.z)));
+      expect(d - o.r).toBeLessThan(track.halfWidth);
+      expect(d - o.r).toBeGreaterThan(track.halfWidth - 1.5);
+    }
     // Every wall segment is within a metre of the edge of the road.
     for (const w of track.walls) {
       const d = Math.min(...track.points.map((p) => Math.hypot(p.x - w.ax, p.z - w.az)));
@@ -212,7 +220,7 @@ describe("laps", () => {
   it("no lap without passing every checkpoint (reversing over the line)", () => {
     // Drive backwards over the start line: gate 0 is behind the start position.
     const inputs = Array(600).fill(DOWN);
-    expect(replay({ version: 9, seed: "2026-10-01", inputs }).lapTicks).toBeNull();
+    expect(replay({ version: 10, seed: "2026-10-01", inputs }).lapTicks).toBeNull();
   });
 
   it("no lap when skipping a checkpoint", () => {

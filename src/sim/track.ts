@@ -1,4 +1,4 @@
-import { generateObstacles, generateWalls, type Obstacle, type Wall } from "./obstacles";
+import { generateObstacles, generatePillars, generateWalls, type Obstacle, type Wall } from "./obstacles";
 import { hashString, mulberry32 } from "./rng";
 import { dcos, dsin } from "./trig";
 
@@ -173,8 +173,8 @@ function build(seed: string, points: Vec2[], kind: TrackKind, halfWidth: number)
     gates.push({ a: { x: p.x - nx, z: p.z - nz }, b: { x: p.x + nx, z: p.z + nz }, t });
   }
   const track: Track = { seed, kind, points, tangents, halfWidth, gates, obstacles: [], walls: [], length: n * SPACING };
-  // A street circuit has no run-off, so nothing to put in it: no cones, no tyre walls.
-  if (kind === "circuit") track.obstacles = generateObstacles(track);
+  // A street circuit has no run-off, so no cones or tyre walls: just the torii pillars on the road's edge.
+  track.obstacles = kind === "circuit" ? generateObstacles(track) : generatePillars(track);
   track.walls = generateWalls(track);
   return track;
 }

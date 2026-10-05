@@ -6,7 +6,7 @@
 //   north    - shrine hill: torii gates over the road, stone lanterns, dense cherry trees, a pagoda
 //   west     - park: cherry trees, fans on grass banks
 //   town     - old town: wooden townhouses, lantern strings across the street, fans on the pavement
-import { STREET_WALL_GAP, type Track } from "@/sim";
+import { STREET_WALL_GAP, TORII_HEIGHT, toriiSamples, type Track } from "@/sim";
 import { at, clearance, createBuilder, frame, type Box, type Layout, type ModelSpot, type Spot, type TreeSpot } from "./layout";
 
 type Zone = "straight" | "east" | "tunnel" | "north" | "west" | "town";
@@ -125,7 +125,8 @@ export function buildStreetLayout(track: Track): Layout {
 
   const sushiTrucks = new Set<number>();
   let tunnelFrom = -1;
-  let lastTorii = -100;
+  // The sim decides where the gates stand: their pillars are solid.
+  const torii = new Set(toriiSamples(track));
   let seg = 0;
 
   for (let i = 0; i < n; i += SEG, seg++) {
@@ -133,6 +134,10 @@ export function buildStreetLayout(track: Track): Layout {
     const zone = zoneAt(f.x, f.z);
     const inner = innerSide(i);
     const outer = -inner;
+    if (torii.has(i)) {
+      // Vermilion gate spanning the road, its pillars on the road's edge: solid in the sim, a roadblock to thread.
+      model("torii", f, 0, 0, 0, Math.atan2(f.tx, f.tz), TORII_HEIGHT, "#e2401f");
+    }
 
     // Track where the tunnel starts and stops.
     if (zone === "tunnel" && tunnelFrom < 0) tunnelFrom = i;
@@ -203,11 +208,6 @@ export function buildStreetLayout(track: Track): Layout {
         if (seg % 2 === 0) tree(f, s * (wall + 9 + rand() * 4), 0, 10 + rand() * 4);
         if (seg % 2 === 0) model("stonelamp", f, s * (wall + 1.1), 0, 0, 0, 2.3);
         if (seg % 3 === 0) standingCrowd(f, s, wall + 0.7, 1.8, segLen, 4);
-      }
-      if (i - lastTorii > 55) {
-        // Vermilion gate, big enough that its pillars stand outside the walls and the road runs between them.
-        model("torii", f, 0, 0, 0, Math.atan2(f.tx, f.tz), 19, "#e2401f");
-        lastTorii = i;
       }
     } else if (zone === "west") {
       // Park: cherry trees both sides, fans on a grass bank on the outside.
