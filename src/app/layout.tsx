@@ -1,3 +1,4 @@
+import { Analytics } from "@vercel/analytics/next";
 import type { Metadata } from "next";
 import { Exo_2, Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
@@ -27,7 +28,11 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} ${exo.variable}`}>
-      <body>{children}</body>
+      <body>
+        {children}
+        {/* Counts visits on Vercel (cookieless); does nothing in local dev. */}
+        <Analytics />
+      </body>
     </html>
   );
 }
