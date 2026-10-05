@@ -51,4 +51,12 @@ export class Gearbox {
     this.rpm = raw > LIMITER_RPM ? LIMITER_RPM - Math.random() * 350 : raw;
     return shifted;
   }
+
+  /** Revving on the grid with the clutch in: throttle sends the needle up to bounce off the limiter, lifting lets it fall. */
+  rev(throttle: boolean, delta: number) {
+    if (!throttle) this.rpm = Math.max(IDLE_RPM, this.rpm - 6000 * delta);
+    // Hits the limiter: fuel cut drops it a few hundred rpm and it climbs straight back.
+    else if (this.rpm >= LIMITER_RPM) this.rpm = LIMITER_RPM - 300 - Math.random() * 250;
+    else this.rpm = Math.min(LIMITER_RPM, this.rpm + 9000 * delta);
+  }
 }

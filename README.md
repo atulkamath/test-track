@@ -1,4 +1,4 @@
-# Daily Lap
+# Test Track
 
 Daily 3D time-trial racer whose lap times are verifiable by replaying inputs on a server.
 

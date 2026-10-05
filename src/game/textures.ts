@@ -15,7 +15,7 @@ export function canvasTexture(w: number, h: number, draw: (ctx: CanvasRenderingC
 
 // Invented sponsor names only; no real brands.
 export const ADS: [string, string, string][] = [
-  ["DAILY LAP", "#c8322b", "#ffffff"],
+  ["TEST TRACK", "#c8322b", "#ffffff"],
   ["APEX FUEL", "#f2c230", "#15181d"],
   ["GRIPLINE", "#15181d", "#f2c230"],
   ["REDLINE", "#ffffff", "#c8322b"],
@@ -98,7 +98,7 @@ export function towerTexture(seed: string) {
     ctx.fillStyle = "#f2c230";
     ctx.font = "bold 20px sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText("DAILY LAP", 64, 34);
+    ctx.fillText("TEST TRACK", 64, 34);
     ctx.fillStyle = "#9fb4c8";
     ctx.font = "13px monospace";
     ctx.fillText(seed, 64, 56);

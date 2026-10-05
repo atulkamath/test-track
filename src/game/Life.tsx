@@ -101,7 +101,7 @@ export function Blimp({ track }: { track: Track }) {
         ctx.font = "italic 900 64px sans-serif";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.fillText("DAILY LAP", 256, 52);
+        ctx.fillText("TEST TRACK", 256, 52);
       }),
     [],
   );
@@ -146,7 +146,7 @@ function drawScreen(canvas: HTMLCanvasElement, texture: THREE.Texture, tick: num
   ctx.fillRect(0, 0, 512, 54);
   ctx.fillStyle = "#fff";
   ctx.font = "italic 900 34px sans-serif";
-  ctx.fillText("● LIVE   DAILY LAP", 20, 39);
+  ctx.fillText("● LIVE   TEST TRACK", 20, 39);
   ctx.font = "bold 92px monospace";
   ctx.fillText(formatTicks(tick), 30, 160);
   ctx.fillStyle = "#f2c230";

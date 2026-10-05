@@ -11,7 +11,7 @@ import type { Layout, ModelSpot } from "./layout";
 import { NIGHT, pbr } from "./materials";
 
 // Models from Poly Pizza — see CREDITS.md for each one's author and licence.
-const MODEL_NAMES = ["torii", "pagoda", "stonelamp", "bamboo", "sushitruck", "shojiwall", "normalwall", "redwoodwall", "jdoor"];
+const MODEL_NAMES = ["torii", "pagoda", "stonelamp", "sushitruck", "shojiwall", "normalwall", "redwoodwall", "jdoor"];
 const modelUrl = (name: string) => `/models/jp/${name}.glb`;
 
 /** One model drawn at many spots: an InstancedMesh per mesh inside it, normalised to bottom-centre and unit height. */

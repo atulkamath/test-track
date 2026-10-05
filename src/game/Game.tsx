@@ -1,18 +1,19 @@
 "use client";
 
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Environment } from "@react-three/drei";
+import { Environment, useProgress } from "@react-three/drei";
 import { Bloom, EffectComposer, HueSaturation, N8AO, SMAA, ToneMapping, Vignette } from "@react-three/postprocessing";
-import { ToneMappingMode } from "postprocessing";
+import { Effect, EffectAttribute, ToneMappingMode } from "postprocessing";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { COS, DOWN, LAPS, LEFT, RIGHT, SIN, STREET_SEED, UP, generateTrack, racePosition, type Track } from "@/sim";
 import { Sound, type OtherCar } from "./audio";
 import { CameraRig, VIEWS } from "./camera";
-import { animateCar, Car, newCarAnim, PLAYER_MODEL } from "./Car";
+import { animateCar, Car, newCarAnim, PLAYER_MODEL, REFLECTIVE } from "./Car";
 import { setNight, SUN_DIR } from "./materials";
 import { Minimap, type MinimapHandle } from "./Minimap";
 import { Cockpit, EYE, type CockpitHandle } from "./Cockpit";
+import { Credits } from "./Credits";
 import { Gearbox } from "./gearbox";
 import { Crowd } from "./Crowd";
 import { BigScreen, Blimp, Helicopter, Lake, Paddock } from "./Life";
@@ -43,7 +44,7 @@ const KEY_BITS: Record<string, number> = {
 /** The maps on offer. `seed` is what the sim builds the track from. */
 const MAPS = [
   { id: "sakura", name: "Sakura Street", blurb: "Japanese street circuit" },
-  { id: "circuit", name: "Grand Circuit", blurb: "Open race circuit, new layout daily" },
+  { id: "circuit", name: "Grand Circuit", blurb: "Open race circuit, new layout daily", demo: true },
 ] as const;
 type MapId = (typeof MAPS)[number]["id"];
 
@@ -188,6 +189,16 @@ function applyTimeOfDay(scene: THREE.Scene, engine: Engine, memo: { t: number; f
   // Night is a deep blue dusk, not black: the cars must stay easy to read.
   scene.backgroundIntensity = lerp3(0.95, 0.42, 0.075, t);
   scene.environmentIntensity = lerp3(0.32, 0.2, 0.13, t);
+  // Cars reflect the sky about three times as strongly as the scenery does, so paint and chrome read as polished.
+  // A material with its own envMap uses its own intensity instead of the scene's.
+  for (const mat of REFLECTIVE) {
+    if (!scene.environment) break;
+    if (mat.envMap !== scene.environment) {
+      mat.envMap = scene.environment;
+      mat.needsUpdate = true;
+    }
+    mat.envMapIntensity = scene.environmentIntensity * 3;
+  }
   if (scene.fog) {
     if (t < 0.5) scene.fog.color.lerpColors(FOG_COLORS[0], FOG_COLORS[1], t * 2);
     else scene.fog.color.lerpColors(FOG_COLORS[1], FOG_COLORS[2], t * 2 - 1);
@@ -322,7 +333,8 @@ function Driver({
     // While the start lights count down the camera cuts round the car; those shots are all from outside.
     const intro = started.current ? engine.countdown : 0;
     const viewName = intro > 0 ? "Chase" : VIEWS[view.current];
-    rig.update(camera as THREE.PerspectiveCamera, viewName, p, speed, sim.offRoad, delta, car.current ?? undefined, EYE, intro);
+    if (!started.current) rig.showroom(camera as THREE.PerspectiveCamera, p, delta);
+    else rig.update(camera as THREE.PerspectiveCamera, viewName, p, speed, sim.offRoad, delta, car.current ?? undefined, EYE, intro);
     // From the driver's seat you see the car's real interior, so the car stays visible; only the driver's own
     // body is hidden (the camera is inside his head) and the glass is made clearer. Bumper cam hides the car.
     const inCockpit = viewName === "Cockpit";
@@ -333,7 +345,10 @@ function Driver({
     if (cockpitGroup.current) cockpitGroup.current.visible = inCockpit;
 
     // Gears: the cockpit hand reaches for the lever and the engine note cuts on every change.
-    const shifted = started.current && updateGears(gears, speed, delta);
+    // On the grid (lights still counting down) the throttle just revs the engine against the limiter.
+    const onGrid = started.current && engine.countdown > 0;
+    if (onGrid) gears.rev(!crashed.current && (input.current & UP) !== 0, delta);
+    const shifted = started.current && !onGrid && updateGears(gears, speed, delta);
     const gear = started.current ? gears.gear : 0;
     if (shifted && lastGear.current !== 0) sound.current?.shift();
     lastGear.current = gear;
@@ -472,13 +487,53 @@ function World({ track, layout }: { track: Track; layout: Layout }) {
   );
 }
 
-/** Post-processing: ambient occlusion for contact shading, gentle bloom, vignette, filmic tone mapping, anti-aliasing. */
-function Effects({ ao }: { ao: boolean }) {
+/**
+ * Speed blur: the edges of the screen streak outward from the middle at speed, the way a camera's shutter smears
+ * the roadside going past. The centre (the road ahead, the car) stays sharp. Nothing below ~90 km/h.
+ */
+class SpeedBlurEffect extends Effect {
+  constructor() {
+    super(
+      "SpeedBlur",
+      /* glsl */ `
+      uniform float strength;
+      void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor) {
+        vec2 dir = uv - vec2(0.5, 0.52);
+        float s = strength * smoothstep(0.18, 0.75, length(dir));
+        if (s <= 0.0) {
+          outputColor = inputColor;
+          return;
+        }
+        vec4 sum = inputColor;
+        for (int i = 1; i < 6; i++) sum += texture2D(inputBuffer, uv - dir * s * float(i));
+        outputColor = sum / 6.0;
+      }`,
+      { attributes: EffectAttribute.CONVOLUTION, uniforms: new Map([["strength", new THREE.Uniform(0)]]) },
+    );
+  }
+}
+
+function SpeedBlur({ engine, view }: { engine: Engine; view: string }) {
+  const effect = useMemo(() => new SpeedBlurEffect(), []);
+  useEffect(() => () => effect.dispose(), [effect]);
+  useFrame(() => {
+    const kmh = Math.abs(engine.sim.state.car.speed) * 3.6;
+    // Less from the driver's seat, where the dash and pillars already frame the view.
+    const max = view === "Cockpit" ? 0.005 : 0.009;
+    const u = effect.uniforms.get("strength")!;
+    u.value += (THREE.MathUtils.smoothstep(kmh, 90, 230) * max - u.value) * 0.1;
+  });
+  return <primitive object={effect} dispose={null} />;
+}
+
+/** Post-processing: ambient occlusion for contact shading, gentle bloom, speed blur, vignette, filmic tone mapping, anti-aliasing. */
+function Effects({ ao, engine, view }: { ao: boolean; engine: Engine; view: string }) {
   return (
     <EffectComposer multisampling={0}>
       {/* AO off in the cockpit: surfaces centimetres from the lens would darken the whole view. */}
       <N8AO enabled={ao} aoRadius={2.5} distanceFalloff={1} intensity={2.2} quality="medium" halfRes />
       <Bloom mipmapBlur luminanceThreshold={0.9} luminanceSmoothing={0.15} intensity={0.3} />
+      <SpeedBlur engine={engine} view={view} />
       <HueSaturation saturation={0.06} />
       <Vignette offset={0.35} darkness={0.35} />
       {/* The composer switches the renderer's own tone mapping off, so do it here: HDR light -> filmic screen colours. */}
@@ -509,14 +564,19 @@ function FrameCap() {
 /** The whole game. Picking a map on the start screen swaps the race for a fresh one on that map, without reloading the page. */
 export default function Game() {
   const [map, setMap] = useState(() => chosenMap());
-  const pickMap = useCallback((id: MapId) => {
+  // The start screen asks for a map first, then shows the controls and the start button. Kept here, not in the
+  // race, because picking a different map builds a fresh race.
+  const [picked, setPicked] = useState(false);
+  const pickMap = useCallback((id: MapId | null) => {
+    if (id === null) return setPicked(false);
     window.history.replaceState(null, "", `?map=${id}`);
     setMap((current) => (current.id === id ? current : mapFor(id)));
+    setPicked(true);
   }, []);
-  return <Race key={`${map.id}:${map.seed}`} map={map} onPickMap={pickMap} />;
+  return <Race key={`${map.id}:${map.seed}`} map={map} picked={picked} onPickMap={pickMap} />;
 }
 
-function Race({ map, onPickMap }: { map: ChosenMap; onPickMap: (id: MapId) => void }) {
+function Race({ map, picked, onPickMap }: { map: ChosenMap; picked: boolean; onPickMap: (id: MapId | null) => void }) {
   const track = useMemo(() => generateTrack(map.seed), [map]);
   const layout = useMemo(() => buildLayout(track), [track]);
   const skids = useRef<SkidHandle>(null);
@@ -525,6 +585,7 @@ function Race({ map, onPickMap }: { map: ChosenMap; onPickMap: (id: MapId) => vo
   const [viewIdx, setViewIdx] = useState(0);
   const [viewName, setViewName] = useState<string | null>(null);
   const [muted, setMuted] = useState(false);
+  const [credits, setCredits] = useState(false);
   const sound = useRef<Sound | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [engine, setEngine] = useState(() => new Engine(track));
@@ -541,6 +602,20 @@ function Race({ map, onPickMap }: { map: ChosenMap; onPickMap: (id: MapId) => vo
   const tacho = useRef<TachoHandle>(null);
   const offRoadEl = useRef<HTMLDivElement>(null);
   const minimap = useRef<MinimapHandle>(null);
+
+  // Hold a cover over the scene until the sky, car and scenery have loaded (plus a beat for shaders to compile),
+  // so nothing pops in; then it dissolves and the menu follows.
+  const { active, loaded } = useProgress();
+  const [ready, setReady] = useState(false);
+  const readyRef = useRef(false);
+  useEffect(() => {
+    if (ready) return;
+    const t = setTimeout(() => {
+      readyRef.current = true;
+      setReady(true);
+    }, active || loaded === 0 ? 20000 : 700);
+    return () => clearTimeout(t);
+  }, [active, loaded, ready]);
 
   // Airbag easter egg: the bag fills the screen, the engine dies, and the only way on is to restart.
   const crashedRef = useRef(false);
@@ -585,21 +660,44 @@ function Race({ map, onPickMap }: { map: ChosenMap; onPickMap: (id: MapId) => vo
 
   /** Leave the start screen: the lights begin their countdown. */
   const begin = useCallback(() => {
-    if (startedRef.current) return;
+    if (startedRef.current || !readyRef.current) return;
     if (!sound.current) sound.current = new Sound();
     sound.current.start();
     startedRef.current = true;
     setStarted(true);
   }, []);
 
+  // Sound starts once a map is picked: the field idling on the grid. Picking a different map builds a new race, so
+  // that one starts its sound as it mounts (the click that picked it already lets the page play audio).
+  const wake = useCallback(() => {
+    if (!sound.current) sound.current = new Sound();
+    sound.current.start();
+  }, []);
+  const choose = useCallback(
+    (id: MapId) => {
+      wake();
+      onPickMap(id);
+    },
+    [wake, onPickMap],
+  );
+  useEffect(() => {
+    if (picked && navigator.userActivation?.hasBeenActive) wake();
+  }, [picked, wake]);
+  useEffect(() => () => sound.current?.dispose(), []);
+
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
+      if (credits) {
+        if (e.code === "Escape" || e.code === "Enter") setCredits(false);
+        return;
+      }
       if (e.code === "KeyR") return restart();
       if (e.code === "KeyC" && !e.repeat) return cycleView();
       if (e.code === "KeyM" && !e.repeat) return toggleMute();
       if ((e.code === "Enter" || e.code === "Space") && !startedRef.current) {
         e.preventDefault();
-        return begin();
+        // On the map step, Enter takes the highlighted map; on the next, it starts the race.
+        return picked ? begin() : readyRef.current && choose(map.id);
       }
       const bit = KEY_BITS[e.code];
       if (bit) {
@@ -620,9 +718,8 @@ function Race({ map, onPickMap }: { map: ChosenMap; onPickMap: (id: MapId) => vo
       window.removeEventListener("keyup", up);
       window.removeEventListener("blur", blur);
     };
-  }, [press, restart, cycleView, toggleMute, begin]);
+  }, [press, restart, cycleView, toggleMute, begin, picked, choose, map.id, credits]);
 
-  useEffect(() => () => sound.current?.dispose(), []);
 
   // Called every frame: write HUD text directly (no React re-render) and catch lap completion.
   const onTick = useCallback(() => {
@@ -669,7 +766,7 @@ function Race({ map, onPickMap }: { map: ChosenMap; onPickMap: (id: MapId) => vo
         <BigScreen layout={layout} engine={engine} />
         <TimeOfDay engine={engine} />
         <FrameCap />
-        <Effects ao={VIEWS[viewIdx] !== "Cockpit"} />
+        <Effects ao={VIEWS[viewIdx] !== "Cockpit"} engine={engine} view={VIEWS[viewIdx]} />
       </Canvas>
 
       <div className={styles.hud}>
@@ -685,7 +782,7 @@ function Race({ map, onPickMap }: { map: ChosenMap; onPickMap: (id: MapId) => vo
             --.---
           </div>
         </div>
-        <div className={styles.seed}>{MAPS.find((m) => m.id === map.id)?.name}{map.id === "circuit" ? ` · ${track.seed}` : ""}</div>
+        <div className={styles.seed}>{MAPS.find((m) => m.id === map.id)?.name}{map.id === "circuit" ? ` · ${track.seed} · Early demo` : ""}</div>
       </div>
       <div className={styles.race}>
         <div className={styles.box}>
@@ -711,31 +808,47 @@ function Race({ map, onPickMap }: { map: ChosenMap; onPickMap: (id: MapId) => vo
       </div>
 
       {/* Start screen: pick a map, then start; the lights count down from there. */}
-      {!started && lapTicks === null && (
-        <div className={styles.menu}>
-          <h1>Daily Lap</h1>
-          <div className={styles.step}>1 · Choose a map</div>
-          <div className={styles.maps}>
-            {MAPS.map((m) => (
-              <button key={m.id} onClick={() => onPickMap(m.id)} aria-pressed={m.id === map.id} className={m.id === map.id ? styles.mapOn : styles.map}>
-                <strong>{m.name}</strong>
-                <span>{m.blurb}</span>
+      {ready && !started && lapTicks === null && !credits && (
+        <div className={styles.menu} key={picked ? "race" : "map"}>
+          <h1>Test Track</h1>
+          {!picked ? (
+            <>
+              <div className={styles.step}>Choose a map</div>
+              <div className={styles.maps}>
+                {MAPS.map((m) => (
+                  <button key={m.id} onClick={() => choose(m.id)} className={m.id === map.id ? styles.mapOn : styles.map}>
+                    <strong>{m.name}</strong>
+                    <span>{m.blurb}</span>
+                    {"demo" in m && <em className={styles.demo}>Early demo · no longer updated</em>}
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : (
+            <>
+              <button className={styles.change} onClick={() => onPickMap(null)}>
+                {MAPS.find((m) => m.id === map.id)?.name} · change
               </button>
-            ))}
+              <div className={styles.keys}>
+                <span>Drive with the arrow keys or WASD</span>
+                <span>C camera</span>
+                <span>M sound</span>
+                <span>R restart</span>
+              </div>
+              <button className={styles.startButton} onClick={begin}>
+                Start race <kbd>Enter</kbd>
+              </button>
+            </>
+          )}
+          <div className={styles.byline}>
+            Game by Atul K ·{" "}
+            <button className={styles.creditsLink} onClick={() => setCredits(true)}>
+              Credits
+            </button>
           </div>
-          <div className={styles.step}>2 · Race</div>
-          <button className={styles.startButton} onClick={begin}>
-            Start race <kbd>Enter</kbd>
-          </button>
-          <div className={styles.keys}>
-            <span>Drive with the arrow keys or WASD</span>
-            <span>C camera</span>
-            <span>M sound</span>
-            <span>R restart</span>
-          </div>
-          <div className={styles.byline}>Game by Atul K</div>
         </div>
       )}
+      {credits && !started && <Credits onClose={() => setCredits(false)} />}
       {airbag && (
         <div className={styles.airbagWrap}>
           <div className={styles.airbagPrompt}>
@@ -766,6 +879,10 @@ function Race({ map, onPickMap }: { map: ChosenMap; onPickMap: (id: MapId) => vo
       )}
 
       <TouchControls press={press} />
+      <div className={styles.cover} data-done={ready ? "1" : "0"} aria-hidden={ready}>
+        <div className={styles.coverTitle}>Test Track</div>
+        <div className={styles.coverBar} />
+      </div>
     </div>
   );
 }

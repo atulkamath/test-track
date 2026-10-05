@@ -1,6 +1,6 @@
 # Credits
 
-Everything here is free for commercial use. **The car models (CC-BY 4.0) and three street-circuit models (CC-BY 3.0) require credit, so this file must ship with the game.**
+Everything here is free for commercial use. **The car models (CC-BY 4.0) and three street-circuit models (CC-BY 3.0) require credit, so this file must ship with the game.** The same credits are shown in the game (Credits, on the start screen: `src/game/Credits.tsx`); keep the two in step.
 
 ## Car models (CC-BY 4.0 — credit required)
 
@@ -40,7 +40,6 @@ CC0 (public domain), all by Quaternius:
 - "Torii Gate" https://poly.pizza/m/7SyXZ62xR5 (tinted vermilion in the game) -> `torii.glb`
 - "Shoji Wall" https://poly.pizza/m/YQu7UD8YIS, "Normal Wall" https://poly.pizza/m/Jrc0L53QYY,
   "Red Wood Wall" https://poly.pizza/m/fCt0206mzB, "Japanese Door" https://poly.pizza/m/t4otyljz8K (townhouse fronts)
-- "Bamboo" https://poly.pizza/m/xBPj13w3JQ -> `bamboo.glb`
 - "Sushi Truck" https://poly.pizza/m/OgrROxABGT -> `sushitruck.glb`
 
 ## Trees (CC0 — public domain, no credit required)

@@ -4,7 +4,7 @@ import { useGLTF } from "@react-three/drei";
 import { forwardRef, useMemo } from "react";
 import * as THREE from "three";
 import { NIGHT } from "./materials";
-import { createDriver, DRIVER_SCALE, DRIVER_URL } from "./driverRig";
+import { bonePosition, createDriver, DRIVER_SCALE, DRIVER_URL } from "./driverRig";
 
 // Player: Generic Coupe "Azura" by mk2design. AI: Generic passenger car pack by Comrade1280. Both CC-BY 4.0,
 // see CREDITS.md. scripts/convert-cars.mjs normalises them: real-world metres, origin on the ground,
@@ -15,6 +15,14 @@ const url = (model: string) => `/models/${model}.glb`;
 
 const FRONT_WHEELS = ["wheel-front-left", "wheel-front-right"];
 const ALL_WHEELS = [...FRONT_WHEELS, "wheel-back-left", "wheel-back-right"];
+
+/**
+ * Car surfaces that should mirror the sky: paint, chrome, glass, lights, alloys. The scenery's reflections are kept
+ * low (scene.environmentIntensity), which would leave the paint looking like plastic, so these get their own,
+ * stronger reflections; Game.tsx keeps them in step with the time of day. Paint is left as each model made it.
+ */
+export const REFLECTIVE = new Set<THREE.MeshStandardMaterial>();
+const SHINY = /body|chrome|glass|optics|alloy/i;
 
 export const Car = forwardRef<THREE.Group, { model: string; variant?: number }>(function Car({ model, variant = 0 }, ref) {
   const { scene } = useGLTF(url(model));
@@ -29,13 +37,28 @@ export const Car = forwardRef<THREE.Group, { model: string; variant?: number }>(
       const mat = o.material as THREE.MeshStandardMaterial;
       // Sharpest filtering for surfaces seen at shallow angles (bonnet, flanks, wheels).
       for (const map of [mat.map, mat.normalMap, mat.roughnessMap, mat.metalnessMap]) if (map) map.anisotropy = 16;
-      if (/glass_red/i.test(mat.name)) {
+      if (/^optics/i.test(mat.name)) {
+        // The AI cars' lights are one textured mesh, front and back: light up only its red parts (the tail lights).
+        const lens = mat.clone();
+        lens.emissive = new THREE.Color("#ff2a1a");
+        lens.emissiveIntensity = 0.2;
+        lens.onBeforeCompile = (shader) => {
+          shader.fragmentShader = shader.fragmentShader.replace(
+            "#include <emissivemap_fragment>",
+            "totalEmissiveRadiance *= (0.4 + diffuseColor.rgb * 6.0) * smoothstep(0.05, 0.2, diffuseColor.r - max(diffuseColor.g, diffuseColor.b));",
+          );
+        };
+        lens.customProgramCacheKey = () => "tail-lights";
+        o.material = lens;
+        brake.push(lens);
+      } else if (/glass_red/i.test(mat.name)) {
         const lens = mat.clone();
         lens.emissive = new THREE.Color("#ff1a0a");
         lens.emissiveIntensity = 0.2;
         o.material = lens;
         brake.push(lens);
       }
+      if (SHINY.test((o.material as THREE.Material).name)) REFLECTIVE.add(o.material as THREE.MeshStandardMaterial);
     });
     for (const name of ALL_WHEELS) {
       const w = root.getObjectByName(name);
@@ -55,8 +78,11 @@ export const Car = forwardRef<THREE.Group, { model: string; variant?: number }>(
 });
 
 /** Where the driver's seat is in each car (car-local metres): x left, y seat height, z forward. Left-hand drive. */
-const SEAT: Record<string, [number, number, number]> = { azura: [0.31, 0.3, -0.05] };
+const SEAT: Record<string, [number, number, number]> = { azura: [0.31, 0.3, -0.05], "cars/sport": [0.3, 0.3, -0.02] };
 const DEFAULT_SEAT: [number, number, number] = [0.34, 0.33, -0.12];
+/** Inside of the roof above the driver's head (car-local metres, measured from the model): the helmet stays under it. */
+// The sport car's roof is ~0.98 at its peak but falls to ~0.9 at the edges and rear, so its helmet sits lower.
+const ROOF: Record<string, number> = { azura: 1.06, "cars/sport": 0.89 };
 /** Suit tint per driver (multiplies the red-and-white suit): the player's is left as made. */
 const SUITS = [undefined, "#8fb0ff", "#ffe08a", "#9be0a0", "#c9c9d2"];
 
@@ -64,7 +90,13 @@ const SUITS = [undefined, "#8fb0ff", "#ffe08a", "#9be0a0", "#c9c9d2"];
 export function DriverFigure({ model, variant = 0 }: { model: string; variant?: number }) {
   const { scene } = useGLTF(DRIVER_URL);
   const rig = useMemo(() => createDriver(scene, { suit: SUITS[variant % SUITS.length] }), [scene, variant]);
-  const seat = SEAT[model] ?? DEFAULT_SEAT;
+  const seat = useMemo(() => {
+    const [x, y, z] = SEAT[model] ?? DEFAULT_SEAT;
+    // Sink him into the seat if his helmet would come up through the roof (the helmet shell is ~4 cm above the bone).
+    rig.root.updateMatrixWorld(true);
+    const helmet = y + (bonePosition(rig, "HeadTop_End", new THREE.Vector3()).y + 0.04) * DRIVER_SCALE;
+    return [x, y - Math.max(0, helmet - (ROOF[model] ?? Infinity)), z] as [number, number, number];
+  }, [rig, model]);
   return (
     <group name="driver" position={seat} scale={DRIVER_SCALE}>
       <primitive object={rig.root} />

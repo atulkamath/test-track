@@ -8,7 +8,7 @@ html,
 body {
   height: 100%;
   overflow: hidden;
-  background: #9fc6e4;
+  background: #08090b; /* the loading cover's black, so the page never flashes another colour first */
   color: #fff;
   font-family: var(--font-geist-sans), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;

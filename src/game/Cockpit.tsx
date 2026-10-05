@@ -202,9 +202,6 @@ function drawCluster(canvas: HTMLCanvasElement, texture: THREE.Texture, gear: nu
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(gear === 0 ? "N" : String(gear), 256, 104);
-  ctx.fillStyle = "#8f98a3";
-  ctx.font = "italic 13px sans-serif";
-  ctx.fillText("ATUL K", 256, 168);
   texture.needsUpdate = true;
 }
 
@@ -452,9 +449,9 @@ export const Cockpit = forwardRef<CockpitHandle>(function Cockpit(_, ref) {
           {chrome}
         </mesh>
       ))}
-      {/* Maker's badge in the middle of the dash, just right of the wheel: far enough in to be on screen whole */}
-      <mesh position={[-0.03, 0.727, 0.4365]} rotation={[0, Math.PI, 0]}>
-        <planeGeometry args={[0.2, 0.0375]} />
+      {/* Maker's badge on the passenger side, above the aluminium strip: clear of the hands and the gear knob */}
+      <mesh position={[-0.3, 0.771, 0.4365]} rotation={[0, Math.PI, 0]}>
+        <planeGeometry args={[0.13, 0.0244]} />
         <meshBasicMaterial map={badge} transparent opacity={0.8} toneMapped={false} />
       </mesh>
       {/* Door panels */}

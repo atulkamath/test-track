@@ -1,6 +1,6 @@
 @AGENTS.md
 
-# Daily Lap — project rules
+# Test Track — project rules
 
 Daily time-trial racer: 3D graphics drawn over a flat 2D physics sim, so lap times can be verified by replaying inputs in Node. See `README.md` for layout and commands.
 

@@ -20,7 +20,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Daily Lap",
+  title: "Test Track",
   description: "A daily time-trial racer",
 };
 

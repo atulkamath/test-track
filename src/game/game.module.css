@@ -341,22 +341,23 @@
   color: #f2c230;
 }
 
-/* Map picker on the start screen. */
+/* Start screen, centred in the lower half under the car: first the map, then the controls and start button. */
 .menu {
   position: absolute;
-  top: 50%;
+  top: 66%;
   left: 50%;
   transform: translate(-50%, -50%);
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 10px;
-  padding: 26px 34px 20px;
+  padding: 22px 34px 18px;
   border-radius: 14px;
   background: rgba(8, 10, 16, 0.72);
   backdrop-filter: blur(6px);
   font-family: var(--font-exo), system-ui, sans-serif;
   text-align: center;
+  animation: menuIn 0.6s 0.3s ease both;
 }
 
 .menu h1 {
@@ -401,14 +402,22 @@
   background: #ffd44d;
 }
 
+.startButton {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Capitals only: trim the line box to the cap height so the word sits dead centre in its badge. */
 .startButton kbd {
   margin-left: 10px;
-  padding: 2px 8px;
+  padding: 5px 8px;
   border-radius: 5px;
   background: rgba(0, 0, 0, 0.18);
   font: inherit;
   font-size: 13px;
   font-style: normal;
+  line-height: 1;
+  text-box: trim-both cap alphabetic;
 }
 
 .keys {
@@ -436,7 +445,8 @@
   border-bottom: 0;
   color: #fff;
   font: inherit;
-  text-align: left;
+  align-items: center;
+  text-align: center;
   cursor: pointer;
 }
 
@@ -466,6 +476,19 @@
 .mapOn span {
   font-size: 12px;
   opacity: 0.8;
+}
+
+.demo {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #1a1400;
+  background: #f2c230;
 }
 
 .minimap {
@@ -523,4 +546,155 @@
   100% {
     opacity: 1;
   }
+}
+
+@keyframes menuIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -44%);
+  }
+}
+
+.change {
+  border: 0;
+  background: none;
+  color: #f2c230;
+  font: inherit;
+  font-style: italic;
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.change:hover {
+  text-decoration: underline;
+}
+
+/* Loading cover: near-black over the scene until everything has loaded, then it dissolves. */
+.cover {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: radial-gradient(ellipse at 50% 45%, #16181d 0%, #08090b 100%);
+  font-family: var(--font-exo), system-ui, sans-serif;
+  transition: opacity 1.1s ease, visibility 0s linear 1.1s;
+}
+
+.cover[data-done="1"] {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.coverTitle {
+  font-style: italic;
+  font-weight: 800;
+  font-size: 52px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #fff;
+}
+
+.coverBar {
+  width: 160px;
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, #f2c230, transparent) 0 0 / 50% 100% no-repeat, rgba(255, 255, 255, 0.1);
+  animation: coverBar 1.2s ease-in-out infinite;
+}
+
+@keyframes coverBar {
+  from {
+    background-position: -100% 0, 0 0;
+  }
+  to {
+    background-position: 200% 0, 0 0;
+  }
+}
+
+/* Credits, from the start screen. */
+.creditsLink {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.credits {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(620px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  padding: 24px 30px 22px;
+  border-radius: 14px;
+  background: rgba(8, 10, 16, 0.85);
+  backdrop-filter: blur(6px);
+  font-family: var(--font-exo), system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
+  animation: menuIn 0.4s ease both;
+}
+
+.credits h2 {
+  margin: 0;
+  font-style: italic;
+  font-weight: 800;
+  font-size: 30px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.creditsBy {
+  margin-bottom: 14px;
+  font-style: italic;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #f2c230;
+}
+
+.credits ul {
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+}
+
+.credits li {
+  padding: 6px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.credits a {
+  color: #fff;
+}
+
+.creditsWhat {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #f2c230;
+}
+
+.creditsChanges {
+  opacity: 0.6;
+}
+
+.credits p {
+  margin: 0 0 10px;
+  opacity: 0.75;
 }

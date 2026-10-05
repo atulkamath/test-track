@@ -78,7 +78,25 @@ export class CameraRig {
     this.lastView = null;
   }
 
-  /** carRoot + eye: the car's transform and the driver's eye in car-local coordinates (for the cockpit view). */
+  private showTime = 0;
+
+  /**
+   * Start screen: the camera swings slowly to and fro behind the car on the grid (only the rear half, clear of
+   * the cars ahead). Aimed below the car so it sits in the upper half of the screen, above the menu.
+   */
+  showroom(camera: THREE.PerspectiveCamera, p: Pose, delta: number) {
+    this.showTime += delta;
+    const a = p.angle + Math.PI + 1.05 * Math.sin(this.showTime * 0.16 + 0.6);
+    camera.position.set(p.x + Math.sin(a) * 6.4, 1.45, p.z + Math.cos(a) * 6.4);
+    this.look.set(p.x, -0.75, p.z);
+    camera.lookAt(this.look);
+    camera.fov = 40;
+    camera.updateProjectionMatrix();
+    this.snapped = false;
+    this.lastView = null;
+  }
+
+  /** carRoot + eye:the car's transform and the driver's eye in car-local coordinates (for the cockpit view). */
   update(camera: THREE.PerspectiveCamera, view: View, p: Pose, speed: number, offRoad: boolean, delta: number, carRoot?: THREE.Object3D, eye?: THREE.Vector3, intro = 0) {
     const fx = Math.sin(p.angle);
     const fz = Math.cos(p.angle);

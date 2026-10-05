@@ -1,7 +1,7 @@
 // "Sakura Street": what stands where around the street circuit. Rendering only.
 // The lap is dressed in zones so each stretch feels different, with everything hard up against the walls:
 //   straight - main straight: covered grandstands on the inside, a canal with a cherry-lined bank outside
-//   east     - bamboo groves either side of the tunnel
+//   east     - green woodland either side of the tunnel, the odd cherry
 //   tunnel   - roofed over, with a hill on top
 //   north    - shrine hill: torii gates over the road, stone lanterns, dense cherry trees, a pagoda
 //   west     - park: cherry trees, fans on grass banks
@@ -190,9 +190,9 @@ export function buildStreetLayout(track: Track): Layout {
       add(f, 0, 7.1, (wall + 1) * 2, 1.4, segLen + 0.05, "berm");
       keepClear(f, 0, 22);
     } else if (zone === "east") {
-      // Bamboo crowding in on both sides, with the odd cherry tree.
+      // Green woodland crowding in on both sides, with the odd cherry tree.
       for (const s of [1, -1]) {
-        for (let k = 0; k < 3; k++) model("bamboo", f, s * (wall + 1.6 + rand() * 4.5), (rand() - 0.5) * segLen, 0, rand() * 6.28, 6 + rand() * 3.5);
+        for (let k = 0; k < 2; k++) tree(f, s * (wall + 5 + rand() * 6), (rand() - 0.5) * segLen, 8 + rand() * 4, "green");
         if (seg % 3 === 0) tree(f, s * (wall + 8 + rand() * 4), 0, 9 + rand() * 3);
         if (seg % 4 === 0) standingCrowd(f, s, wall + 0.7, 1.4, segLen, 3);
       }
