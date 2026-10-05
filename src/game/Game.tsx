@@ -527,7 +527,17 @@ function SpeedBlur({ engine, view }: { engine: Engine; view: string }) {
 }
 
 /** Post-processing: ambient occlusion for contact shading, gentle bloom, speed blur, vignette, filmic tone mapping, anti-aliasing. */
+/** A touchscreen phone or tablet: draw a lighter picture so it stays smooth. (Game.tsx only runs in the browser.) */
+const PHONE = window.matchMedia("(pointer: coarse)").matches;
+
 function Effects({ ao, engine, view }: { ao: boolean; engine: Engine; view: string }) {
+  // Phones: only the colour grade. AO, bloom, blur and SMAA are what make the picture too heavy for them.
+  if (PHONE)
+    return (
+      <EffectComposer multisampling={0}>
+        <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
+      </EffectComposer>
+    );
   return (
     <EffectComposer multisampling={0}>
       {/* AO off in the cockpit: surfaces centimetres from the lens would darken the whole view. */}
@@ -749,9 +759,9 @@ function Race({ map, picked, onPickMap }: { map: ChosenMap; picked: boolean; onP
   return (
     <div className={styles.root}>
       <Canvas
-        shadows="percentage"
-        // Capped below full Retina: every post-processing pass is paid per pixel.
-        dpr={[1, 1.5]}
+        shadows={PHONE ? false : "percentage"}
+        // Capped below full Retina: every post-processing pass is paid per pixel. Phones draw at 1x.
+        dpr={PHONE ? 1 : [1, 1.5]}
         frameloop="demand"
         gl={{ antialias: false, powerPreference: "high-performance" }}
         camera={{ fov: 58, near: 0.1, far: 3200 }}
