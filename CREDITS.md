@@ -34,7 +34,6 @@ shadow plane removed, textures resized and converted to WebP.
 CC-BY 3.0 (http://creativecommons.org/licenses/by/3.0/) — credit required:
 - "Pagoda" by Poly by Google — https://poly.pizza/m/1zS7ucaAd4J -> `pagoda.glb`
 - "Japanese Stone Lamp" by Flopsi — https://poly.pizza/m/5gZfOZIW92k -> `stonelamp.glb`
-- "red lantern" by Sophie Kim — https://poly.pizza/m/7PZhxLFiGc2 -> `redlantern.glb`
 
 CC0 (public domain), all by Quaternius:
 - "Torii Gate" https://poly.pizza/m/7SyXZ62xR5 (tinted vermilion in the game) -> `torii.glb`
