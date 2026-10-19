@@ -2,7 +2,7 @@
 
 A daily 3D time-trial racer in the browser. **Play it: https://test-track-1.vercel.app/**
 
-<!-- TODO: add a screenshot or GIF here, e.g. ![Test Track](docs/preview.gif) -->
+![Test Track on Sakura Street](docs/hero.jpg)
 
 Built with Next.js 16, React 19, React Three Fiber and TypeScript. Works on desktop and phones.
 
@@ -18,6 +18,8 @@ Pick on the start screen, or use `?map=sakura` / `?map=circuit`.
   town, a tunnel and a canal.
 - **Grand Circuit**: an open race circuit with gravel run-off and grandstands, a new layout each day (`?seed=...`
   picks one).
+
+![Cockpit camera](docs/cockpit.jpg)
 
 **Controls:** arrows / WASD, R restart, C cycle camera, M mute. Touch buttons on phones.
 
