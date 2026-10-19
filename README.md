@@ -14,8 +14,7 @@ Built with Next.js 16, React 19, React Three Fiber and TypeScript. Works on desk
 
 ## Maps
 Pick on the start screen, or use `?map=sakura` / `?map=circuit`.
-- **Sakura Street** (default): a fixed 1.9 km Japanese street circuit with walls at the kerb, cherry blossom, an old
-  town, a tunnel and a canal.
+- **Sakura Street** (default): a Japanese street circuit with cherry blossom, an old town and a tunnel.
 - **Grand Circuit**: an open race circuit with gravel run-off and grandstands, a new layout each day (`?seed=...`
   picks one).
 
