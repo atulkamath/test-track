@@ -37,4 +37,4 @@ pnpm tsx scripts/make-fixture.ts [seed] [out]   # autopilot lap -> run.json
 - `test/sim.test.ts`: determinism, purity and golden lap tests.
 
 ## License
-Code is [MIT](LICENSE). 3D models and textures keep their own licenses, credited in [CREDITS.md](CREDITS.md).
+Code is [MIT](https://github.com/atulkamath/test-track/blob/main/LICENSE). 3D models and textures keep their own licenses, credited in [CREDITS.md](https://github.com/atulkamath/test-track/blob/main/CREDITS.md).
