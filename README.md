@@ -37,5 +37,5 @@ pnpm tsx scripts/make-fixture.ts [seed] [out]   # autopilot lap -> run.json
 - `src/game/`: React Three Fiber renderer, audio and the browser tick loop.
 - `test/sim.test.ts`: determinism, purity and golden lap tests.
 
-## Credits
-3D models and textures are free for commercial use and credited in [CREDITS.md](CREDITS.md).
+## License
+Code is [MIT](LICENSE). 3D models and textures keep their own licenses, credited in [CREDITS.md](CREDITS.md).
